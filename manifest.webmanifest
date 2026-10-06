@@ -1,0 +1,21 @@
+{
+  "id": "./",
+  "name": "개구리 점프",
+  "short_name": "개구리점프",
+  "description": "두 사람이 한 화면에서 겨루는 개구리 징검다리 건너기 대결 게임",
+  "lang": "ko",
+  "dir": "ltr",
+  "start_url": "./index.html?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#0b2f40",
+  "theme_color": "#0d3b4f",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

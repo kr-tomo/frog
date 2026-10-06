@@ -1,0 +1,1142 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>개구리 점프</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="description" content="두 사람이 한 화면에서 겨루는 개구리 징검다리 건너기 대결 게임">
+<meta name="theme-color" content="#0d3b4f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="개구리 점프">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+  html, body { margin: 0; padding: 0; background: #061a24; }
+  body {
+    position: fixed; inset: 0; width: 100%; height: 100dvh; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;   /* 캔버스는 항상 정중앙, 남는 곳은 레터박스 */
+    overscroll-behavior: none; touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  }
+  canvas { display: block; touch-action: none; outline: none; }
+  noscript { color: #fff; font: 18px sans-serif; }
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="개구리 점프 게임 화면"></canvas>
+<noscript>이 게임은 JavaScript가 필요합니다.</noscript>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+ * 1. CONFIG — 수치·스탯·돌 설정 (여기만 고쳐서 밸런스를 조절하세요)
+ * ===================================================================== */
+const CONFIG = {
+  W: 540, H: 960,                                    // 논리 해상도 (세로 고정, 아래→위 진행)
+  island: { startH: 110, goalH: 110 },               // 출발 섬(하단) / 도착 섬(상단) 높이
+  stone: {
+    count: 7,
+    rx0: 84, ry0: 42,                                // 첫 번째 돌의 타원 반지름
+    ratio: 0.85,                                     // 등비수열 공비 (?ratio=0.8 로 덮어쓰기 가능)
+    sideMargin: 16,                                  // 화면 가장자리와의 최소 간격
+    maxCenterOffset: 120,                            // 강 중앙선에서 좌우로 벗어날 수 있는 최대 거리
+    reachLimit: 0.7,                                 // 연속한 두 돌 사이 거리 ≤ (가장 약한 개구리 최대 점프) × 0.7
+    landingSlack: 1.0,                               // 착지 타원 배율 (1.0 = 그림과 상관없는 정확한 타원)
+    visualScale: 1.15                                // 돌 그림만 살짝 크게 (판정 무관)
+  },
+  jump: {
+    minDist: 40, maxDist: 300,                       // 논리 px
+    maxCharge: 1.0,                                  // 게이지가 가득 차는 시간(초)
+    ease: (t) => t * t * (3 - 2 * t),                // 누른 시간 → 거리 비율 곡선
+    durMin: 0.40, durMax: 0.60,                      // 점프 체공 시간
+    heightMin: 26, heightMax: 70,                    // 포물선 높이(시각 효과)
+    errorDist: 'normal',                             // 'normal' | 'uniform'
+    errorClampSigma: 2.5                             // 정규분포 꼬리 제한(σ 단위)
+  },
+  frog: {
+    radius: 24,                                      // 그림 크기 기준 (판정 무관)
+    touchRadius: 58,                                 // 터치 영역 (그림보다 넉넉하게)
+    deadzone: 6,                                     // 중심과 너무 가까운 터치는 방향 무시
+    startXs: [0.30, 0.70],                           // P1/P2 출발 위치 (가로 비율)
+    startYRatio: 0.5,                                // 출발 섬 안에서의 세로 위치
+    landTime: 0.18, splashTime: 0.95, spawnTime: 0.35
+  },
+  game: { countdownStep: 0.8, goShow: 0.7, resultPanelDelay: 0.9 },
+  players: [
+    { label: 'P1', color: '#3da5ff' },
+    { label: 'P2', color: '#ff5c5c' }
+  ],
+  /* 개구리 5종 — 새 종류를 추가하려면 한 줄만 더하면 됩니다.
+   * (스프라이트는 assets/frogs/<id>/<상태>.png 로 자동 연결됩니다) */
+  frogs: [
+    { id: 'balanced', name: '개굴이', concept: '균형형', desc: '뭐든 무난한 올라운더',      power: 1.00, sigma: 5,   color: '#6cc24a', dark: '#2f7d32' },
+    { id: 'power',    name: '우람이', concept: '파워형', desc: '멀리 뛰지만 방향이 흔들려요', power: 1.15, sigma: 8,   color: '#ff9440', dark: '#a8520f' },
+    { id: 'precise',  name: '또박이', concept: '정밀형', desc: '짧게 뛰지만 아주 정확해요',   power: 0.90, sigma: 2,   color: '#a98af0', dark: '#5a3ea8' },
+    { id: 'leaper',   name: '깡총이', concept: '도약형', desc: '조금 더 멀리, 조금 흔들려요', power: 1.05, sigma: 6.5, color: '#f2d544', dark: '#9a7d0b' },
+    { id: 'steady',   name: '든든이', concept: '안정형', desc: '살짝 짧지만 믿음직해요',      power: 0.95, sigma: 3.5, color: '#f28aa4', dark: '#a8385a' }
+  ]
+};
+
+const FROG_STATES = ['idle', 'charge', 'jump', 'land', 'splash', 'win', 'lose'];
+const TAU = Math.PI * 2;
+const W = CONFIG.W, H = CONFIG.H;
+
+/* URL 파라미터: ?seed=123 (돌 배치 고정) · ?ratio=0.8 · ?debug=1 · ?noassets=1 */
+const PARAMS = new URLSearchParams(location.search);
+const FIXED_SEED = PARAMS.has('seed') && Number.isFinite(parseInt(PARAMS.get('seed'), 10)) ? (parseInt(PARAMS.get('seed'), 10) >>> 0) : null;
+const DEBUG = PARAMS.has('debug');
+if (PARAMS.has('ratio')) {
+  const r = parseFloat(PARAMS.get('ratio'));
+  if (r >= 0.5 && r <= 1.0) CONFIG.stone.ratio = r;
+}
+
+/* =====================================================================
+ * 2. ASSETS — 스프라이트 매니페스트 (이미지 파일만 교체하면 외형이 바뀝니다)
+ *   src     : assets/ 기준 상대 경로
+ *   frames  : 가로로 이어 붙인 프레임 수 (스프라이트 시트, 기본 1)
+ *   fps/loop: 프레임 애니메이션 속도 / 반복 여부
+ *   anchor  : 그림 기준점 (0~1). 기본 [0.5, 0.5]
+ *   size    : 화면에 그릴 논리 크기 [w, h] (생략하면 이미지 원본 크기)
+ *   rotate  : true면 개구리가 보는 방향으로 회전 (그림은 "위쪽을 보는" 모양으로 그리기)
+ *   ※ 판정(돌 타원, 터치 반경 등)은 CONFIG가 정하며 이미지 크기와 무관합니다.
+ *   ※ 파일이 없거나 로드에 실패하면 Canvas로 그린 임시 그래픽으로 자동 대체됩니다.
+ * ===================================================================== */
+const ASSET_DIR = 'assets/';
+const ASSETS = {
+  // 배경·지형
+  bg_water:     { src: 'water.png',        anchor: [0, 0], size: [W, H] },
+  island_start: { src: 'island_start.png', anchor: [0, 0], size: [W, CONFIG.island.startH] },
+  island_goal:  { src: 'island_goal.png',  anchor: [0, 0], size: [W, CONFIG.island.goalH] },
+  stone:        { src: 'stone.png' },                       // 타원 크기에 맞춰 늘려 그림
+  // 이펙트
+  fx_shadow:    { src: 'fx/shadow.png',  size: [48, 24] },
+  fx_splash:    { src: 'fx/splash.png',  frames: 8, fps: 10, loop: false, size: [140, 110] },
+  fx_ripple:    { src: 'fx/ripple.png',  frames: 6, fps: 6,  loop: false, size: [150, 90] },
+  fx_dust:      { src: 'fx/dust.png',    frames: 5, fps: 14, loop: false, size: [80, 50] },
+  fx_confetti:  { src: 'fx/confetti.png', frames: 4 },       // 프레임마다 다른 색 조각
+  // UI — 게이지·화살표·링·배지
+  ui_gauge_bg:   { src: 'ui/gauge_bg.png',   size: [64, 12] },
+  ui_gauge_fill: { src: 'ui/gauge_fill.png', size: [64, 12] },
+  ui_arrow:      { src: 'ui/arrow.png',      anchor: [0.5, 1], size: [26, 60] },   // 위쪽을 향한 화살표, 길이는 코드가 조절
+  ui_ring_p1:    { src: 'ui/ring_p1.png',    size: [72, 44] },
+  ui_ring_p2:    { src: 'ui/ring_p2.png',    size: [72, 44] },
+  ui_badge_p1:   { src: 'ui/badge_p1.png',   size: [44, 24] },
+  ui_badge_p2:   { src: 'ui/badge_p2.png',   size: [44, 24] },
+  // UI — 화면·버튼·아이콘
+  ui_title:      { src: 'ui/title.png' },
+  ui_panel:      { src: 'ui/panel.png' },
+  ui_card:       { src: 'ui/card.png',        size: [88, 130] },
+  ui_card_sel:   { src: 'ui/card_selected.png', size: [96, 138] },
+  ui_btn:        { src: 'ui/btn.png' },
+  ui_btn_sub:    { src: 'ui/btn_sub.png' },
+  ui_btn_icon:   { src: 'ui/btn_icon.png',    size: [56, 56] },
+  icon_pause:    { src: 'ui/icon_pause.png',  size: [28, 28] },
+  icon_sound_on: { src: 'ui/icon_sound_on.png',  size: [30, 30] },
+  icon_sound_off:{ src: 'ui/icon_sound_off.png', size: [30, 30] },
+  ui_count_3:    { src: 'ui/count_3.png' },
+  ui_count_2:    { src: 'ui/count_2.png' },
+  ui_count_1:    { src: 'ui/count_1.png' },
+  ui_go:         { src: 'ui/go.png' }
+};
+// 개구리 스프라이트 키: frog_<id>_<상태>  (상태: idle charge jump land splash win lose)
+// 단일 이미지(idle)만 있어도 동작합니다 — 없는 상태는 idle 이미지로 대체됩니다.
+for (const f of CONFIG.frogs) {
+  for (const st of FROG_STATES) {
+    ASSETS[`frog_${f.id}_${st}`] = {
+      src: `frogs/${f.id}/${st}.png`, size: [64, 64], rotate: true,
+      frames: 1, fps: 10, loop: !(st === 'jump' || st === 'land' || st === 'splash')
+    };
+  }
+}
+
+const Sprites = {
+  images: {},
+  load() {
+    if (PARAMS.has('noassets')) return;
+    for (const key of Object.keys(ASSETS)) {
+      const img = new Image();
+      img.onload = () => { Sprites.images[key] = img; };
+      img.onerror = () => { /* 없으면 임시 그래픽 사용 */ };
+      img.src = ASSET_DIR + ASSETS[key].src;
+    }
+  }
+};
+
+/* =====================================================================
+ * 3. 전역 상태 & 캔버스
+ * ===================================================================== */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const view = { scale: 1 };
+
+const G = {
+  state: 'title',            // title | select | countdown | playing | paused | result
+  stateT: 0, time: 0, elapsed: 0, goT: 99,
+  seed: 0, stones: [], frogs: [], fx: [], confetti: [],
+  selection: [0, 0],         // P1/P2가 고른 개구리 종류(인덱스)
+  winner: null, lastCount: 4,
+  updateReady: false, installReady: false
+};
+let jumpRng = Math.random;
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOut = (t) => 1 - (1 - t) * (1 - t);
+
+/* 시드 가능한 난수 (mulberry32) */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* 저장된 설정 */
+function loadPrefs() {
+  try {
+    const sel = JSON.parse(localStorage.getItem('frogjump.sel') || 'null');
+    if (Array.isArray(sel) && sel.length === 2 && sel.every((n) => Number.isInteger(n) && n >= 0 && n < CONFIG.frogs.length)) G.selection = sel;
+    Sfx.muted = localStorage.getItem('frogjump.muted') === '1';
+  } catch (e) { /* 저장소를 못 쓰는 환경 */ }
+}
+function savePrefs() {
+  try {
+    localStorage.setItem('frogjump.sel', JSON.stringify(G.selection));
+    localStorage.setItem('frogjump.muted', Sfx.muted ? '1' : '0');
+  } catch (e) { /* 무시 */ }
+}
+
+/* =====================================================================
+ * 4. 효과음 (WebAudio, 선택 사항) — 음소거 버튼 제공
+ * ===================================================================== */
+const Sfx = {
+  ctx: null, muted: false,
+  unlock() {
+    if (!this.ctx) {
+      try { const AC = window.AudioContext || window.webkitAudioContext; if (AC) this.ctx = new AC(); } catch (e) { /* 무시 */ }
+    }
+    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+  },
+  tone(f0, f1, dur, type = 'sine', vol = 0.16, delay = 0) {
+    if (this.muted || !this.ctx) return;
+    const c = this.ctx, t = c.currentTime + delay;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t);
+    if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(c.destination);
+    o.start(t); o.stop(t + dur + 0.03);
+  },
+  noise(dur, vol = 0.2, freq = 1400) {
+    if (this.muted || !this.ctx) return;
+    const c = this.ctx, t = c.currentTime;
+    const n = Math.max(1, Math.floor(c.sampleRate * dur));
+    const buf = c.createBuffer(1, n, c.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = freq;
+    const g = c.createGain(); g.gain.value = vol;
+    src.connect(f); f.connect(g); g.connect(c.destination);
+    src.start(t);
+  },
+  click()  { this.tone(660, 880, 0.06, 'square', 0.07); },
+  tick()   { this.tone(740, 740, 0.09, 'triangle', 0.14); },
+  go()     { this.tone(988, 1568, 0.25, 'triangle', 0.18); },
+  jump()   { this.tone(320, 640, 0.14, 'sine', 0.16); },
+  land()   { this.tone(200, 90, 0.12, 'triangle', 0.2); },
+  splash() { this.noise(0.4, 0.22, 1600); this.tone(500, 160, 0.25, 'sine', 0.08); },
+  win()    { [523, 659, 784, 1046].forEach((f, i) => this.tone(f, f, 0.22, 'triangle', 0.16, i * 0.11)); }
+};
+
+/* =====================================================================
+ * 5. 유틸: 스프라이트 그리기 / 텍스트 / 도형
+ * ===================================================================== */
+function drawSprite(key, x, y, o = {}) {
+  const img = Sprites.images[key];
+  if (!img) return false;
+  const def = ASSETS[key];
+  const frames = def.frames || 1;
+  const fw = img.naturalWidth / frames, fh = img.naturalHeight;
+  let fi = 0;
+  if (o.frame !== undefined) fi = o.frame % frames;
+  else if (frames > 1) {
+    const t = o.t !== undefined ? o.t : G.time, step = Math.floor(t * (def.fps || 10));
+    fi = def.loop === false ? Math.min(frames - 1, step) : step % frames;
+  }
+  const dw = o.w !== undefined ? o.w : (def.size ? def.size[0] : fw);
+  const dh = o.h !== undefined ? o.h : (def.size ? def.size[1] : fh);
+  const ax = def.anchor ? def.anchor[0] : 0.5, ay = def.anchor ? def.anchor[1] : 0.5;
+  const crop = o.crop !== undefined ? o.crop : 1;
+  ctx.save();
+  ctx.translate(x, y);
+  if (o.rot) ctx.rotate(o.rot);
+  if (o.sx !== undefined || o.sy !== undefined) ctx.scale(o.sx !== undefined ? o.sx : 1, o.sy !== undefined ? o.sy : 1);
+  if (o.alpha !== undefined) ctx.globalAlpha *= o.alpha;
+  ctx.drawImage(img, fi * fw, 0, fw * crop, fh, -dw * ax, -dh * ay, dw * crop, dh);
+  ctx.restore();
+  return true;
+}
+
+const FONT = '"Jua","Do Hyeon","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif';
+function text(str, x, y, o = {}) {
+  ctx.save();
+  ctx.font = `${o.weight || '800'} ${o.size || 24}px ${FONT}`;
+  ctx.textAlign = o.align || 'center';
+  ctx.textBaseline = o.base || 'middle';
+  ctx.lineJoin = 'round';
+  if (o.alpha !== undefined) ctx.globalAlpha *= o.alpha;
+  if (o.stroke !== false) {
+    ctx.lineWidth = o.strokeW || Math.max(3, (o.size || 24) / 6);
+    ctx.strokeStyle = o.stroke || 'rgba(0,30,45,0.85)';
+    if (o.maxW) ctx.strokeText(str, x, y, o.maxW); else ctx.strokeText(str, x, y);
+  }
+  ctx.fillStyle = o.color || '#fff';
+  if (o.maxW) ctx.fillText(str, x, y, o.maxW); else ctx.fillText(str, x, y);
+  ctx.restore();
+}
+
+function rrect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function ell(x, y, rx, ry, rot = 0) { ctx.beginPath(); ctx.ellipse(x, y, Math.max(0.01, rx), Math.max(0.01, ry), rot, 0, TAU); }
+
+/* =====================================================================
+ * 6. 월드: 돌 배치 생성 · 착지 판정 (이미지와 완전히 분리)
+ * ===================================================================== */
+function generateStones(rng) {
+  const S = CONFIG.stone, n = S.count;
+  const top = CONFIG.island.goalH, bottom = H - CONFIG.island.startH;
+  const gap = (bottom - top) / (n + 1);                      // 강 구간에 균등 배치
+  const weakest = Math.min(...CONFIG.frogs.map((f) => f.power));
+  const reach = CONFIG.jump.maxDist * weakest * S.reachLimit; // 가장 약한 개구리도 건널 수 있는 상한
+  const cx = W / 2, stones = [];
+  let prev = null;
+  for (let i = 0; i < n; i++) {
+    const k = Math.pow(S.ratio, i);                           // 등비수열로 작아짐
+    const rx = S.rx0 * k, ry = S.ry0 * k, y = bottom - gap * (i + 1);
+    const minX = S.sideMargin + rx, maxX = W - S.sideMargin - rx;
+    let lo = Math.max(minX, cx - S.maxCenterOffset), hi = Math.min(maxX, cx + S.maxCenterOffset);
+    if (prev) {
+      const dy = prev.y - y, dx = Math.sqrt(Math.max(0, reach * reach - dy * dy));
+      lo = Math.max(lo, prev.x - dx); hi = Math.min(hi, prev.x + dx);
+    }
+    if (lo > hi) lo = hi = (lo + hi) / 2;
+    const x = lo + rng() * (hi - lo);
+    prev = { idx: i, x, y, rx, ry, bob: 0 };
+    stones.push(prev);
+  }
+  if (DEBUG) {                                                // 겹침 검사 (개발용)
+    for (let i = 0; i < stones.length; i++) for (let j = i + 1; j < stones.length; j++) {
+      const a = stones[i], b = stones[j];
+      if (Math.abs(a.y - b.y) < a.ry + b.ry && Math.abs(a.x - b.x) < a.rx + b.rx) console.warn('돌 겹침', i, j);
+    }
+  }
+  return stones;
+}
+
+function judgeLanding(x, y) {
+  const slack = CONFIG.stone.landingSlack;
+  for (const s of G.stones) {
+    const dx = (x - s.x) / (s.rx * slack), dy = (y - s.y) / (s.ry * slack);
+    if (dx * dx + dy * dy <= 1) return { type: 'stone', stone: s.idx };
+  }
+  if (y <= CONFIG.island.goalH) return { type: 'goal' };
+  if (y >= H - CONFIG.island.startH) return { type: 'start' };
+  return { type: 'water' };
+}
+
+function newWorld() {
+  G.seed = FIXED_SEED !== null ? FIXED_SEED : Math.floor(Math.random() * 4294967296) >>> 0;
+  G.stones = generateStones(mulberry32(G.seed));
+  jumpRng = FIXED_SEED !== null ? mulberry32(G.seed ^ 0xA5A5A5A5) : Math.random;
+}
+
+/* =====================================================================
+ * 7. 개구리
+ * ===================================================================== */
+function startPos(i) {
+  return { x: W * CONFIG.frog.startXs[i], y: H - CONFIG.island.startH * (1 - CONFIG.frog.startYRatio) };
+}
+function makeFrog(i, typeIdx) {
+  const p = startPos(i);
+  return {
+    idx: i, type: CONFIG.frogs[typeIdx], x: p.x, y: p.y, sx: p.x, sy: p.y,
+    state: 'idle', stateT: 0, facing: 0, aim: { x: 0, y: -1 },
+    pointerId: null, press: { x: p.x, y: p.y }, chargeT: 0,
+    jump: null, on: -1, spawnT: 0, phase: Math.random() * TAU
+  };
+}
+function resetFrogs() { G.frogs = [makeFrog(0, G.selection[0]), makeFrog(1, G.selection[1])]; }
+function setFrogState(f, s) { f.state = s; f.stateT = 0; }
+const chargeRatio = (f) => clamp(f.chargeT / CONFIG.jump.maxCharge, 0, 1);
+
+function updateAim(f) {
+  const dx = f.x - f.press.x, dy = f.y - f.press.y, d = Math.hypot(dx, dy);
+  if (d >= CONFIG.frog.deadzone) { f.aim.x = dx / d; f.aim.y = dy / d; }   // 누른 지점의 "반대 방향"
+  f.facing = Math.atan2(f.aim.y, f.aim.x) + Math.PI / 2;
+}
+
+function gauss(rng) {
+  let u = 0, v = 0;
+  while (!u) u = rng();
+  while (!v) v = rng();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * v);
+}
+function sampleAngleError(sigmaDeg) {
+  const J = CONFIG.jump;
+  let deg;
+  if (J.errorDist === 'uniform') deg = (jumpRng() * 2 - 1) * sigmaDeg * Math.sqrt(3);   // 표준편차가 σ가 되도록
+  else deg = clamp(gauss(jumpRng), -J.errorClampSigma, J.errorClampSigma) * sigmaDeg;
+  return deg * Math.PI / 180;
+}
+
+function startJump(f) {
+  const J = CONFIG.jump;
+  updateAim(f);
+  const e = J.ease(chargeRatio(f));
+  const dist = (J.minDist + (J.maxDist - J.minDist) * e) * f.type.power;
+  const ang = Math.atan2(f.aim.y, f.aim.x) + sampleAngleError(f.type.sigma);        // 점프 순간 각도 오차 적용
+  const tx = clamp(f.x + Math.cos(ang) * dist, 6, W - 6);
+  const ty = clamp(f.y + Math.sin(ang) * dist, 6, H - 6);
+  const res = judgeLanding(tx, ty);                                                  // 착지 지점은 시작 시 결정
+  const k = clamp(dist / (J.maxDist * 1.15), 0, 1);
+  f.jump = {
+    sx: f.x, sy: f.y, tx, ty, t: 0, u: 0, res,
+    dur: lerp(J.durMin, J.durMax, k), height: lerp(J.heightMin, J.heightMax, k)
+  };
+  f.facing = Math.atan2(ty - f.y, tx - f.x) + Math.PI / 2;
+  f.on = -1;
+  setFrogState(f, 'jump');
+  Sfx.jump();
+}
+
+function landFrog(f) {
+  const j = f.jump;
+  f.x = j.tx; f.y = j.ty; f.jump = null;
+  if (j.res.type === 'goal') { winGame(f); return; }
+  if (j.res.type === 'water') {
+    setFrogState(f, 'splash');
+    addFx('splash', f.x, f.y, 0.8);
+    addFx('ripple', f.x, f.y, 1.1);
+    Sfx.splash();
+    return;
+  }
+  setFrogState(f, 'land');
+  addFx('dust', f.x, f.y, 0.35);
+  if (j.res.type === 'stone') { f.on = j.res.stone; G.stones[j.res.stone].bob = 1; } else f.on = -1;
+  Sfx.land();
+}
+
+function respawn(f) {
+  const p = startPos(f.idx);
+  f.x = p.x; f.y = p.y; f.on = -1; f.aim.x = 0; f.aim.y = -1; f.facing = 0;
+  f.spawnT = CONFIG.frog.spawnTime;
+  setFrogState(f, 'idle');
+}
+
+function updateFrog(f, dt) {
+  f.stateT += dt;
+  if (f.spawnT > 0) f.spawnT = Math.max(0, f.spawnT - dt);
+  switch (f.state) {
+    case 'charge':
+      f.chargeT += dt;
+      updateAim(f);                                   // 누르는 동안 손가락을 움직이면 방향도 갱신
+      break;
+    case 'jump': {
+      const j = f.jump;
+      j.t += dt;
+      j.u = Math.min(1, j.t / j.dur);
+      f.x = lerp(j.sx, j.tx, j.u); f.y = lerp(j.sy, j.ty, j.u);
+      if (j.u >= 1) landFrog(f);
+      break;
+    }
+    case 'land':
+      if (f.stateT >= CONFIG.frog.landTime) setFrogState(f, 'idle');
+      break;
+    case 'splash':
+      if (f.stateT >= CONFIG.frog.splashTime) respawn(f);
+      break;
+    default: break;
+  }
+}
+
+function winGame(winner) {
+  G.winner = winner;
+  winner.y = Math.max(winner.y, 70);                  // 결승선 너머 화면 끝에 걸쳐 착지해도 승자가 잘 보이게
+  setFrogState(winner, 'win');
+  for (const f of G.frogs) {
+    f.pointerId = null;
+    if (f === winner) continue;
+    f.jump = null;
+    if (f.state === 'splash') respawn(f);
+    setFrogState(f, 'lose');
+  }
+  for (let i = 0; i < 80; i++) {
+    G.confetti.push({
+      x: Math.random() * W, y: -Math.random() * 500, vy: 120 + Math.random() * 160, vx: (Math.random() - 0.5) * 40,
+      rot: Math.random() * TAU, vr: (Math.random() - 0.5) * 8, s: 6 + Math.random() * 8, c: i % 4,
+      ph: Math.random() * TAU
+    });
+  }
+  Sfx.win();
+  setState('result');
+  unlockScreen();
+}
+
+/* =====================================================================
+ * 8. 이펙트
+ * ===================================================================== */
+function addFx(type, x, y, dur) { G.fx.push({ type, x, y, t: 0, dur }); }
+
+function drawFx(e) {
+  const key = 'fx_' + e.type;
+  if (drawSprite(key, e.x, e.y, { t: e.t })) return;
+  const u = clamp(e.t / e.dur, 0, 1);
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  if (e.type === 'splash') {
+    for (let r = 0; r < 2; r++) {
+      const p = clamp(u * 1.2 - r * 0.25, 0, 1);
+      ctx.globalAlpha = (1 - p) * 0.85; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+      ell(0, 0, 10 + p * 46, (10 + p * 46) * 0.55); ctx.stroke();
+    }
+    for (let i = 0; i < 10; i++) {
+      const a = i * TAU / 10 + 0.3, v = 30 + (i % 3) * 14, k = easeOut(u);
+      const px = Math.cos(a) * v * k, py = Math.sin(a) * v * 0.5 * k - Math.sin(u * Math.PI) * (28 + (i % 4) * 8);
+      ctx.globalAlpha = 1 - u; ctx.fillStyle = '#e6f7ff';
+      ctx.beginPath(); ctx.arc(px, py, 4 * (1 - u) + 1, 0, TAU); ctx.fill();
+    }
+  } else if (e.type === 'ripple') {
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    ctx.globalAlpha = (1 - u) * 0.6;
+    ell(0, 0, 20 + u * 60, (20 + u * 60) * 0.55); ctx.stroke();
+  } else if (e.type === 'dust') {
+    ctx.globalAlpha = (1 - u) * 0.7; ctx.strokeStyle = '#f4efe0'; ctx.lineWidth = 4 * (1 - u) + 1;
+    ell(0, 0, 14 + u * 26, (14 + u * 26) * 0.5); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawConfetti() {
+  const colors = ['#ff5c5c', '#ffd23f', '#3da5ff', '#6cc24a'];
+  for (const p of G.confetti) {
+    if (p.y > H + 20) continue;
+    ctx.save();
+    ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+    if (!drawSprite('fx_confetti', 0, 0, { frame: p.c, sx: p.s / 10, sy: p.s / 10 })) {
+      ctx.fillStyle = colors[p.c];
+      ctx.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2);
+    }
+    ctx.restore();
+  }
+}
+
+/* =====================================================================
+ * 9. 입력 — Pointer Events, pointerId 추적으로 멀티터치 2인 동시 조작
+ * ===================================================================== */
+const ui = { cur: [], last: [], pressed: new Map() };
+
+function toLogical(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
+}
+function hitButton(p) {
+  for (let i = ui.last.length - 1; i >= 0; i--) {
+    const b = ui.last[i];
+    if (!b.disabled && Math.abs(p.x - b.x) <= b.w / 2 && Math.abs(p.y - b.y) <= b.h / 2) return b;
+  }
+  return null;
+}
+function pickFrog(p) {
+  let best = null, bd = CONFIG.frog.touchRadius;
+  for (const f of G.frogs) {
+    if (f.pointerId !== null) continue;
+    if (f.state !== 'idle' && f.state !== 'land') continue;     // 점프·물에 빠짐·종료 후에는 입력 무시
+    const d = Math.hypot(f.x - p.x, f.y - p.y);
+    if (d <= bd) { bd = d; best = f; }
+  }
+  return best;
+}
+function cancelAllCharges() {
+  for (const f of G.frogs) {
+    if (f.pointerId !== null || f.state === 'charge') { f.pointerId = null; if (f.state === 'charge') setFrogState(f, 'idle'); }
+  }
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  Sfx.unlock();
+  const p = toLogical(e);
+  const b = hitButton(p);
+  if (b) {
+    ui.pressed.set(e.pointerId, b.id);
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
+    return;
+  }
+  if (G.state === 'playing') {
+    const f = pickFrog(p);
+    if (f) {
+      f.pointerId = e.pointerId; f.press = p; f.chargeT = 0;
+      setFrogState(f, 'charge'); updateAim(f);
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
+    }
+  }
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (G.state !== 'playing') return;
+  const f = G.frogs.find((fr) => fr.pointerId === e.pointerId);
+  if (f && f.state === 'charge') f.press = toLogical(e);
+});
+function onPointerEnd(e, cancelled) {
+  const bid = ui.pressed.get(e.pointerId);
+  if (bid !== undefined) {
+    ui.pressed.delete(e.pointerId);
+    if (!cancelled) {
+      const b = hitButton(toLogical(e));
+      if (b && b.id === bid && b.onClick) { Sfx.click(); b.onClick(); }
+    }
+    return;
+  }
+  for (const f of G.frogs) {
+    if (f.pointerId !== e.pointerId) continue;
+    f.pointerId = null;
+    if (f.state !== 'charge') continue;
+    f.press = toLogical(e);
+    if (cancelled || G.state !== 'playing') setFrogState(f, 'idle'); else startJump(f);   // 손가락을 떼는 순간 점프
+  }
+}
+canvas.addEventListener('pointerup', (e) => onPointerEnd(e, false));
+canvas.addEventListener('pointercancel', (e) => onPointerEnd(e, true));
+
+/* 더블탭/핀치 줌/롱프레스 메뉴/스크롤 방지 */
+['contextmenu', 'dblclick', 'gesturestart', 'gesturechange', 'gestureend', 'selectstart'].forEach((t) => document.addEventListener(t, (e) => e.preventDefault()));
+document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+document.addEventListener('touchstart', (e) => { if (e.touches.length > 1 && e.cancelable) e.preventDefault(); }, { passive: false });
+
+window.addEventListener('keydown', (e) => {          // 데스크톱 편의: P / Esc 로 일시정지
+  if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
+    if (G.state === 'playing') pauseGame(); else if (G.state === 'paused') resumeGame();
+  }
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (G.state === 'playing') pauseGame(); }
+  else if (['countdown', 'playing', 'paused'].includes(G.state)) lockScreen();
+});
+
+/* =====================================================================
+ * 10. 상태 머신
+ * ===================================================================== */
+let wakeLock = null;
+async function lockScreen() {
+  try {
+    if ('wakeLock' in navigator && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    }
+  } catch (e) { /* 지원하지 않거나 거부됨 */ }
+}
+function unlockScreen() { try { if (wakeLock) wakeLock.release(); } catch (e) { /* 무시 */ } wakeLock = null; }
+
+function setState(s) { G.state = s; G.stateT = 0; }
+function goTitle() { cancelAllCharges(); unlockScreen(); G.fx.length = 0; G.confetti.length = 0; G.winner = null; newWorld(); resetFrogs(); setState('title'); }
+function goSelect() { cancelAllCharges(); unlockScreen(); G.fx.length = 0; G.confetti.length = 0; G.winner = null; newWorld(); resetFrogs(); setState('select'); }
+function startMatch() {
+  newWorld();                                          // 다시 시작할 때마다 돌 배치를 새로 생성
+  resetFrogs();
+  G.fx.length = 0; G.confetti.length = 0; G.winner = null;
+  G.elapsed = 0; G.goT = 99; G.lastCount = 4;
+  setState('countdown');
+  lockScreen();
+}
+function pauseGame() { if (G.state !== 'playing') return; cancelAllCharges(); setState('paused'); }
+function resumeGame() { if (G.state === 'paused') setState('playing'); }
+
+function update(dt) {
+  if (G.state === 'paused') return;
+  G.time += dt; G.stateT += dt;
+  for (const s of G.stones) if (s.bob > 0) s.bob = Math.max(0, s.bob - dt * 2.5);
+  for (let i = G.fx.length - 1; i >= 0; i--) { G.fx[i].t += dt; if (G.fx[i].t >= G.fx[i].dur) G.fx.splice(i, 1); }
+  for (const p of G.confetti) { p.y += p.vy * dt; p.x += p.vx * dt + Math.sin(G.time * 3 + p.ph) * 0.6; p.rot += p.vr * dt; }
+
+  if (G.state === 'countdown') {
+    const step = CONFIG.game.countdownStep, n = 3 - Math.floor(G.stateT / step);
+    if (n !== G.lastCount && n >= 1) { G.lastCount = n; Sfx.tick(); }
+    if (G.stateT >= step * 3) { setState('playing'); G.goT = 0; Sfx.go(); }
+  } else if (G.state === 'playing') {
+    G.elapsed += dt; G.goT += dt;
+  }
+  for (const f of G.frogs) updateFrog(f, dt);
+}
+
+/* =====================================================================
+ * 11. 렌더링 — 월드
+ * ===================================================================== */
+const ripples = Array.from({ length: 30 }, () => ({
+  x: Math.random() * W, y: CONFIG.island.goalH + Math.random() * (H - CONFIG.island.goalH - CONFIG.island.startH),
+  w: 24 + Math.random() * 30, h: 8 + Math.random() * 10, speed: 0.15 + Math.random() * 0.2, phase: Math.random()
+}));
+
+function drawWater() {
+  if (drawSprite('bg_water', 0, 0)) return;
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#3aa8d0'); g.addColorStop(1, '#1c6a96');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  for (const r of ripples) {
+    const p = (G.time * r.speed + r.phase) % 1;
+    ctx.globalAlpha = (1 - p) * 0.35;
+    ell(r.x, r.y, r.w * (0.4 + p * 0.6), r.h * (0.4 + p * 0.6)); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function islandPlaceholder(top, bottom, edgeY, goal) {
+  ctx.save();
+  const g = ctx.createLinearGradient(0, top, 0, bottom);
+  g.addColorStop(0, goal ? '#7bd36a' : '#83c76a'); g.addColorStop(1, goal ? '#4aa04c' : '#58a44c');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  const dirOut = goal ? 1 : -1;                      // 강 쪽으로 약간 물결치는 해안선
+  ctx.moveTo(0, goal ? top : bottom);
+  ctx.lineTo(0, edgeY);
+  for (let x = 0; x <= W; x += 18) ctx.lineTo(x, edgeY + dirOut * (3 + Math.sin(x * 0.045 + G.time * 1.2) * 3));
+  ctx.lineTo(W, goal ? top : bottom);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 4;   // 판정 경계선과 일치하는 거품 선
+  ctx.beginPath(); ctx.moveTo(0, edgeY); ctx.lineTo(W, edgeY); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  for (let i = 0; i < 9; i++) { ell(30 + i * 62, (top + bottom) / 2 + ((i * 37) % 40) - 20, 20, 7); ctx.fill(); }
+  if (goal) {                                         // 도착 섬: 체크무늬 결승선
+    const y0 = edgeY - 14;
+    for (let i = 0; i < 27; i++) { ctx.fillStyle = i % 2 ? '#fff' : '#1b2a33'; ctx.fillRect(i * 20, y0, 20, 7); ctx.fillStyle = i % 2 ? '#1b2a33' : '#fff'; ctx.fillRect(i * 20, y0 + 7, 20, 7); }
+  }
+  ctx.restore();
+}
+
+function drawIslands() {
+  const gh = CONFIG.island.goalH, sh = CONFIG.island.startH;
+  if (!drawSprite('island_goal', 0, 0)) islandPlaceholder(0, gh, gh, true);
+  if (!drawSprite('island_start', 0, H - sh)) islandPlaceholder(H - sh, H, H - sh, false);
+}
+
+function drawStone(s) {
+  const vs = CONFIG.stone.visualScale;
+  const bob = s.bob > 0 ? 1 - Math.sin((1 - s.bob) * Math.PI) * 0.07 : 1;
+  const rx = s.rx * vs * bob, ry = s.ry * vs * bob;
+  if (drawSprite('stone', s.x, s.y, { w: rx * 2, h: ry * 2 })) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,40,60,0.28)'; ell(s.x + 3, s.y + 7, rx * 1.02, ry * 1.02); ctx.fill();
+  const g = ctx.createRadialGradient(s.x - rx * 0.3, s.y - ry * 0.4, 2, s.x, s.y, rx);
+  g.addColorStop(0, '#d2cdbf'); g.addColorStop(1, '#8f8a7c');
+  ctx.fillStyle = g; ell(s.x, s.y, rx, ry); ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = '#6a665b'; ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ell(s.x - rx * 0.28, s.y - ry * 0.35, rx * 0.4, ry * 0.22); ctx.fill();
+  ctx.fillStyle = 'rgba(88,140,70,0.45)';             // 이끼 (돌마다 고정된 모양)
+  ell(s.x + rx * 0.45, s.y + ry * 0.2, rx * 0.2, ry * 0.18, 0.4); ctx.fill();
+  ell(s.x + rx * (-0.5 + (s.idx % 3) * 0.1), s.y + ry * 0.35, rx * 0.14, ry * 0.12); ctx.fill();
+  ctx.restore();
+}
+
+/* --- 개구리 임시 그래픽 (위쪽을 보는 탑뷰) --- */
+function drawFrogBody(type, state, sx, sy) {
+  const R = CONFIG.frog.radius, col = type.color, dark = type.dark;
+  ctx.save();
+  ctx.scale(sx, sy);
+  ctx.lineJoin = 'round'; ctx.lineWidth = 2.5; ctx.strokeStyle = dark; ctx.fillStyle = col;
+  let a = 0.95, L = R * 0.95;                                    // 뒷다리 각도/길이
+  if (state === 'charge') { a = 1.2; L = R * 0.75; }
+  else if (state === 'jump') { a = 0.12; L = R * 1.55; }
+  for (const s of [-1, 1]) {
+    const hx = s * R * 0.7, hy = R * 0.45, dx = s * Math.sin(a), dy = Math.cos(a);
+    ctx.fillStyle = col; ell(hx + dx * L * 0.5, hy + dy * L * 0.5, L * 0.58, R * 0.27, Math.atan2(dy, dx)); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = dark; ell(hx + dx * L * 0.98, hy + dy * L * 0.98, R * 0.22, R * 0.16, Math.atan2(dy, dx)); ctx.fill();
+    const fdx = s * (state === 'jump' ? 0.4 : 0.95), fdy = state === 'jump' ? 0.9 : 0.4;   // 앞다리
+    ctx.fillStyle = col; ell(s * R * 0.62 + fdx * R * 0.3, -R * 0.15 + fdy * R * 0.3, R * 0.36, R * 0.15, Math.atan2(fdy, fdx)); ctx.fill(); ctx.stroke();
+  }
+  ctx.fillStyle = col; ell(0, 0, R * 0.82, R * 1.0); ctx.fill(); ctx.stroke();                 // 몸통
+  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ell(0, R * 0.12, R * 0.48, R * 0.62); ctx.fill();
+  ctx.fillStyle = dark; ctx.globalAlpha = 0.45;                                               // 등 무늬
+  for (const [px, py, pr] of [[-0.3, 0.1, 0.17], [0.28, 0.3, 0.15], [0, 0.55, 0.13]]) { ctx.beginPath(); ctx.arc(px * R, py * R, pr * R, 0, TAU); ctx.fill(); }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = col; ell(0, -R * 0.78, R * 0.68, R * 0.52); ctx.fill(); ctx.stroke();       // 머리
+  for (const s of [-1, 1]) {
+    const ex = s * R * 0.42, ey = -R * 1.0;
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(ex, ey, R * 0.3, 0, TAU); ctx.fill(); ctx.stroke();
+    if (state === 'win') {                                         // ^ ^ 웃는 눈
+      ctx.strokeStyle = '#17321f'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(ex, ey + R * 0.08, R * 0.16, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); ctx.strokeStyle = dark; ctx.lineWidth = 2.5;
+    } else if (state === 'lose') {                                  // X 눈
+      ctx.strokeStyle = '#17321f'; ctx.lineWidth = 2.5; const k = R * 0.13;
+      ctx.beginPath(); ctx.moveTo(ex - k, ey - k); ctx.lineTo(ex + k, ey + k); ctx.moveTo(ex + k, ey - k); ctx.lineTo(ex - k, ey + k); ctx.stroke(); ctx.strokeStyle = dark;
+    } else {
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex, ey, R * 0.22, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#1b2a22'; ctx.beginPath(); ctx.arc(ex, ey - R * 0.04, R * 0.11, 0, TAU); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+/* 개구리 한 마리를 그리는 공통 함수 (스프라이트 우선, 없으면 임시 그래픽) */
+function drawFrogVisual(type, state, x, y, o = {}) {
+  const key = `frog_${type.id}_${state}`, idleKey = `frog_${type.id}_idle`;
+  const useKey = Sprites.images[key] ? key : (Sprites.images[idleKey] ? idleKey : null);
+  const scale = o.scale || 1, sx = (o.sx || 1) * scale, sy = (o.sy || 1) * scale;
+  ctx.save();
+  if (o.alpha !== undefined) ctx.globalAlpha *= o.alpha;
+  if (useKey) {
+    const rot = ASSETS[useKey].rotate ? (o.rot || 0) : 0;
+    drawSprite(useKey, x, y, { rot, sx, sy, t: o.t });
+  } else {
+    ctx.translate(x, y); ctx.rotate(o.rot || 0);
+    drawFrogBody(type, state, sx, sy);
+  }
+  ctx.restore();
+}
+
+function drawPlayerRing(f, x, y) {
+  const col = CONFIG.players[f.idx].color, R = CONFIG.frog.radius;
+  if (drawSprite('ui_ring_p' + (f.idx + 1), x, y + 4)) return;
+  ctx.save();
+  ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.globalAlpha = 0.95;
+  ell(x, y + 4, R * 1.35, R * 0.95); ctx.stroke();
+  ctx.globalAlpha = 0.2; ctx.fillStyle = col; ctx.fill();
+  ctx.restore();
+}
+function drawBadge(f, x, y) {
+  if (drawSprite('ui_badge_p' + (f.idx + 1), x, y)) return;
+  const col = CONFIG.players[f.idx].color;
+  ctx.save();
+  ctx.fillStyle = col; rrect(x - 20, y - 11, 40, 22, 11); ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
+  ctx.restore();
+  text(CONFIG.players[f.idx].label, x, y + 1, { size: 15, stroke: false });
+}
+
+function drawFrog(f) {
+  const R = CONFIG.frog.radius;
+  if (f.state === 'splash') return;                                  // 물속으로 잠김 (물보라는 fx로 표현)
+  let gx = f.x, gy = f.y, h = 0, scale = 1, sx = 1, sy = 1, alpha = 1, rot = f.facing;
+  if (f.spawnT > 0) alpha = 1 - f.spawnT / CONFIG.frog.spawnTime * 0.8;
+  switch (f.state) {
+    case 'idle': { const b = Math.sin(G.time * 3 + f.phase) * 0.025; sx = 1 + b; sy = 1 - b; break; }
+    case 'charge': { const r = chargeRatio(f); sx = 1 + 0.14 * r; sy = 1 - 0.14 * r; if (r >= 1) gx += Math.sin(G.time * 60) * 1.2; break; }
+    case 'jump': { const u = f.jump.u, arc = 4 * u * (1 - u); h = f.jump.height * arc; scale = 1 + 0.3 * arc; sx = 0.92; sy = 1.12; break; }
+    case 'land': { const k = 1 - f.stateT / CONFIG.frog.landTime; sx = 1 + 0.2 * k; sy = 1 - 0.16 * k; break; }
+    case 'win': h = Math.abs(Math.sin(f.stateT * 7)) * 16; rot = Math.sin(f.stateT * 5) * 0.25; break;
+    case 'lose': alpha = 0.85; rot = f.facing + 0.35; sy = 0.92; break;
+    default: break;
+  }
+  // 그림자 + 플레이어 링 (지면 기준)
+  const sh = 1 - Math.min(0.4, h / 120);
+  if (!drawSprite('fx_shadow', gx, gy + 8, { sx: sh, sy: sh, alpha: 0.5 })) {
+    ctx.save(); ctx.globalAlpha = 0.22 * sh; ctx.fillStyle = '#05202e'; ell(gx, gy + 8, R * 0.95 * sh, R * 0.5 * sh); ctx.fill(); ctx.restore();
+  }
+  if (f.state !== 'jump') drawPlayerRing(f, gx, gy);
+  drawFrogVisual(f.type, f.state, gx, gy - h, { rot, scale, sx, sy, alpha, t: f.stateT });
+  if (f.state !== 'jump') drawBadge(f, gx, gy + R + 22);
+}
+
+function drawChargeUI(f) {
+  const R = CONFIG.frog.radius, r = chargeRatio(f), col = CONFIG.players[f.idx].color;
+  // 방향 화살표 (실제 점프 방향 = 누른 지점의 반대쪽)
+  const ang = Math.atan2(f.aim.y, f.aim.x), len = 34 + r * 56;
+  const ox = f.x + f.aim.x * R * 0.9, oy = f.y + f.aim.y * R * 0.9;
+  if (!drawSprite('ui_arrow', ox, oy, { rot: ang + Math.PI / 2, h: len })) {
+    ctx.save();
+    ctx.translate(ox, oy); ctx.rotate(ang);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 11; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(len - 12, 0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(len, 0); ctx.lineTo(len - 22, -14); ctx.lineTo(len - 22, 14); ctx.closePath(); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 6; ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(len - 12, 0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(len - 1, 0); ctx.lineTo(len - 20, -11); ctx.lineTo(len - 20, 11); ctx.closePath(); ctx.fillStyle = col; ctx.fill();
+    ctx.restore();
+  }
+  // 차징 게이지 (개구리 위, 화면 위쪽이면 아래)
+  const gy = f.y - R - 40 < 24 ? f.y + R + 52 : f.y - R - 40, gw = 64, gh = 12;
+  if (drawSprite('ui_gauge_bg', f.x, gy)) {
+    drawSprite('ui_gauge_fill', f.x, gy, { crop: r, w: gw, h: gh });
+  } else {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,25,40,0.75)'; rrect(f.x - gw / 2 - 3, gy - gh / 2 - 3, gw + 6, gh + 6, 8); ctx.fill();
+    if (r > 0) {
+      ctx.fillStyle = `hsl(${120 - 100 * r}, 85%, 55%)`;
+      rrect(f.x - gw / 2, gy - gh / 2, Math.max(gh, gw * r), gh, 6); ctx.fill();
+    }
+    if (r >= 1 && Math.floor(G.time * 10) % 2 === 0) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; rrect(f.x - gw / 2 - 3, gy - gh / 2 - 3, gw + 6, gh + 6, 8); ctx.stroke(); }
+    ctx.restore();
+  }
+}
+
+function drawWorld() {
+  drawWater();
+  drawIslands();
+  if (DEBUG) text(`seed ${G.seed}`, 8, H - 14, { size: 14, align: 'left', alpha: 0.8 });
+  else if (FIXED_SEED !== null) text(`seed ${G.seed}`, 8, H - 14, { size: 14, align: 'left', alpha: 0.5 });
+  for (const s of G.stones) drawStone(s);
+  for (const e of G.fx) if (e.type === 'ripple') drawFx(e);
+  const order = G.frogs.slice().sort((a, b) => (a.state === 'jump') - (b.state === 'jump') || a.y - b.y);
+  for (const f of order) drawFrog(f);
+  for (const e of G.fx) if (e.type !== 'ripple') drawFx(e);
+  for (const f of G.frogs) if (f.state === 'charge') drawChargeUI(f);
+  if (DEBUG) {
+    ctx.save(); ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#ff0'; for (const s of G.stones) { ell(s.x, s.y, s.rx * CONFIG.stone.landingSlack, s.ry * CONFIG.stone.landingSlack); ctx.stroke(); }
+    ctx.strokeStyle = '#0ff'; for (const f of G.frogs) { ctx.beginPath(); ctx.arc(f.x, f.y, CONFIG.frog.touchRadius, 0, TAU); ctx.stroke(); }
+    ctx.restore();
+  }
+}
+
+/* =====================================================================
+ * 12. 렌더링 — UI (즉시 모드: 그리면서 버튼 영역을 등록)
+ * ===================================================================== */
+function button(o) {
+  ui.cur.push(o);
+  if (o.custom) return;                                  // 모양을 호출한 쪽에서 직접 그리는 버튼(카드 등)
+  const down = Array.from(ui.pressed.values()).includes(o.id);
+  const oy = down ? 3 : 0, variant = o.variant || (o.icon ? 'sub' : 'primary');
+  const key = o.icon ? 'ui_btn_icon' : (variant === 'primary' ? 'ui_btn' : 'ui_btn_sub');
+  if (!drawSprite(key, o.x, o.y + oy, { w: o.w, h: o.h })) {
+    const r = Math.min(o.h / 2, 24);
+    ctx.save();
+    ctx.translate(o.x, o.y + oy);
+    if (!down) { ctx.fillStyle = 'rgba(0,0,0,0.3)'; rrect(-o.w / 2, -o.h / 2 + 5, o.w, o.h, r); ctx.fill(); }
+    const c = variant === 'primary' ? ['#9be85f', '#3fa33a', 'rgba(10,60,20,0.6)'] : ['#7fc4ee', '#3b86bb', 'rgba(10,40,70,0.6)'];
+    const g = ctx.createLinearGradient(0, -o.h / 2, 0, o.h / 2);
+    g.addColorStop(0, c[0]); g.addColorStop(1, c[1]);
+    ctx.fillStyle = g; rrect(-o.w / 2, -o.h / 2, o.w, o.h, r); ctx.fill();
+    ctx.lineWidth = 4; ctx.strokeStyle = c[2]; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.22)'; rrect(-o.w / 2 + 6, -o.h / 2 + 5, o.w - 12, o.h * 0.38, r * 0.8); ctx.fill();
+    ctx.restore();
+  }
+  if (o.icon) drawIcon(o.icon, o.x, o.y + oy);
+  if (o.label) text(o.label, o.x, o.y + oy + 1, { size: o.size || Math.round(o.h * 0.42), maxW: o.w - 24 });
+}
+
+function drawIcon(name, x, y) {
+  const key = 'icon_' + name;
+  if (drawSprite(key, x, y)) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#fff'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (name === 'pause') { rrect(-9, -11, 7, 22, 2); ctx.fill(); rrect(2, -11, 7, 22, 2); ctx.fill(); }
+  else {                                                         // sound_on / sound_off: 스피커
+    ctx.beginPath(); ctx.moveTo(-12, -5); ctx.lineTo(-6, -5); ctx.lineTo(1, -11); ctx.lineTo(1, 11); ctx.lineTo(-6, 5); ctx.lineTo(-12, 5); ctx.closePath(); ctx.fill();
+    if (name === 'sound_on') { ctx.beginPath(); ctx.arc(2, 0, 8, -0.9, 0.9); ctx.stroke(); ctx.beginPath(); ctx.arc(2, 0, 14, -0.9, 0.9); ctx.stroke(); }
+    else { ctx.strokeStyle = '#ff7a7a'; ctx.beginPath(); ctx.moveTo(7, -7); ctx.lineTo(17, 7); ctx.moveTo(17, -7); ctx.lineTo(7, 7); ctx.stroke(); }
+  }
+  ctx.restore();
+}
+
+function panel(x, y, w, h, alpha = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha;
+  if (!drawSprite('ui_panel', x, y, { w, h })) {
+    ctx.fillStyle = 'rgba(6,34,50,0.82)'; rrect(x - w / 2, y - h / 2, w, h, 26); ctx.fill();
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.stroke();
+  }
+  ctx.restore();
+}
+function dim(a) { ctx.save(); ctx.fillStyle = `rgba(3,20,30,${a})`; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+
+function soundButton(x, y, id = 'mute') {
+  button({ id, x, y, w: 56, h: 56, icon: Sfx.muted ? 'sound_off' : 'sound_on', onClick: () => { Sfx.muted = !Sfx.muted; savePrefs(); if (!Sfx.muted) Sfx.click(); } });
+}
+
+function doInstall() {
+  const p = window.__installPrompt;
+  if (!p) return;
+  p.prompt();
+  p.userChoice.finally(() => { window.__installPrompt = null; G.installReady = false; });
+}
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+
+function renderTitle() {
+  dim(0.3);
+  if (!drawSprite('ui_title', 270, 235)) {
+    ctx.save(); ctx.translate(270, 215); ctx.rotate(-0.04);
+    text('개구리', 0, -48, { size: 118, color: '#b9f26b', strokeW: 18, stroke: '#14532d' });
+    text('점프!', 0, 62, { size: 118, color: '#ffe066', strokeW: 18, stroke: '#7a3b00' });
+    ctx.restore();
+    text('2인 대결', 270, 352, { size: 36 });
+  }
+  button({ id: 'start', x: 270, y: 480, w: 300, h: 92, label: '시작하기', size: 42, onClick: goSelect });
+  let y = 575;
+  if (G.installReady && !isStandalone) { button({ id: 'install', x: 270, y, w: 260, h: 62, label: '앱으로 설치', size: 28, variant: 'sub', onClick: doInstall }); y += 76; }
+  if (G.updateReady) { button({ id: 'update', x: 270, y, w: 260, h: 62, label: '새 버전 적용', size: 28, variant: 'sub', onClick: () => location.reload() }); }
+  soundButton(500, 40);
+  panel(270, 725, 470, 170);
+  text('개구리를 꾹 눌러 힘을 모아요', 270, 678, { size: 24, maxW: 430 });
+  text('가려는 방향의 반대쪽을 눌렀다 떼요', 270, 722, { size: 24, maxW: 430 });
+  text('위쪽 섬에 먼저 도착하면 승리!', 270, 766, { size: 24, color: '#ffe066', maxW: 430 });
+  if (isIOS && !isStandalone) text('Safari 공유 버튼 → "홈 화면에 추가"로 설치', 270, 835, { size: 18, maxW: 500, alpha: 0.9 });
+}
+
+function renderSelect() {
+  dim(0.82);
+  text('개구리 고르기', 270, 58, { size: 46, color: '#b9f26b', stroke: '#14532d' });
+  for (let p = 0; p < 2; p++) {
+    const y0 = p === 0 ? 100 : 450, col = CONFIG.players[p].color, sel = G.selection[p], t = CONFIG.frogs[sel];
+    panel(270, y0 + 165, 504, 330);
+    ctx.save(); ctx.fillStyle = col; rrect(36, y0 + 16, 64, 36, 18); ctx.fill(); ctx.restore();
+    text(CONFIG.players[p].label, 68, y0 + 35, { size: 24, stroke: false });
+    text(p === 0 ? '왼쪽 개구리' : '오른쪽 개구리', 118, y0 + 35, { size: 22, align: 'left' });
+    for (let i = 0; i < CONFIG.frogs.length; i++) {
+      const cx = 78 + i * 96, cy = y0 + 130, on = i === sel;
+      button({ id: `card${p}_${i}`, x: cx, y: cy, w: 88, h: 130, variant: 'sub', custom: true, onClick: () => { G.selection[p] = i; savePrefs(); resetFrogs(); } });
+      ctx.save();                                        // 카드 모양은 여기서 직접 그림
+      if (!drawSprite(on ? 'ui_card_sel' : 'ui_card', cx, cy)) {
+        ctx.fillStyle = on ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.08)';
+        rrect(cx - 44, cy - 65, 88, 130, 16); ctx.fill();
+        ctx.lineWidth = on ? 5 : 2; ctx.strokeStyle = on ? col : 'rgba(255,255,255,0.35)'; ctx.stroke();
+      }
+      ctx.restore();
+      drawFrogVisual(CONFIG.frogs[i], 'idle', cx, cy - 8, { scale: 1.15 });
+      text(CONFIG.frogs[i].concept, cx, cy + 46, { size: 18, maxW: 80 });
+    }
+    text(`${t.name} (${t.concept})`, 270, y0 + 232, { size: 32, color: '#ffe066' });
+    text(`파워 ×${t.power.toFixed(2)}   방향 오차 ±${t.sigma}°`, 270, y0 + 272, { size: 22 });
+    text(t.desc, 270, y0 + 304, { size: 20, color: '#cfe8f5', maxW: 460 });
+  }
+  button({ id: 'back', x: 130, y: 872, w: 190, h: 66, label: '뒤로', size: 28, variant: 'sub', onClick: goTitle });
+  button({ id: 'go', x: 385, y: 872, w: 250, h: 80, label: '시작!', size: 38, onClick: startMatch });
+}
+
+function renderCountdown() {
+  const step = CONFIG.game.countdownStep, n = Math.max(1, 3 - Math.floor(G.stateT / step)), ph = (G.stateT % step) / step;
+  const s = 1 + 0.5 * Math.pow(1 - clamp(ph * 2, 0, 1), 2), a = ph > 0.8 ? (1 - ph) / 0.2 : 1;
+  ctx.save(); ctx.translate(270, 430); ctx.scale(s, s); ctx.globalAlpha = a;
+  if (!drawSprite('ui_count_' + n, 0, 0)) text(String(n), 0, 0, { size: 240, color: '#ffe066', strokeW: 22, stroke: '#7a3b00' });
+  ctx.restore();
+  text('준비!', 270, 250, { size: 44, alpha: 0.95 });
+}
+
+function renderPlaying() {
+  text(`${Math.floor(G.elapsed / 60)}:${(G.elapsed % 60).toFixed(1).padStart(4, '0')}`, 270, 40, { size: 34 });
+  button({ id: 'pause', x: 500, y: 40, w: 56, h: 56, icon: 'pause', onClick: pauseGame });
+  soundButton(436, 40);
+  if (G.goT < CONFIG.game.goShow) {
+    const k = G.goT / CONFIG.game.goShow;
+    ctx.save(); ctx.translate(270, 430); ctx.scale(1 + 0.4 * k, 1 + 0.4 * k); ctx.globalAlpha = 1 - k;
+    if (!drawSprite('ui_go', 0, 0)) text('GO!', 0, 0, { size: 160, color: '#ffe066', strokeW: 18, stroke: '#7a3b00' });
+    ctx.restore();
+  }
+}
+
+function renderPaused() {
+  dim(0.6);
+  panel(270, 480, 400, 540);
+  text('일시정지', 270, 270, { size: 50 });
+  button({ id: 'resume', x: 270, y: 370, w: 300, h: 78, label: '계속하기', size: 34, onClick: resumeGame });
+  button({ id: 'restart', x: 270, y: 465, w: 300, h: 68, label: '다시 시작', size: 30, variant: 'sub', onClick: startMatch });
+  button({ id: 'home', x: 270, y: 555, w: 300, h: 68, label: '타이틀로', size: 30, variant: 'sub', onClick: goTitle });
+  soundButton(270, 650);
+  text(Sfx.muted ? '소리 꺼짐' : '소리 켜짐', 270, 705, { size: 22 });
+}
+
+function renderResult() {
+  drawConfetti();
+  const a = clamp((G.stateT - CONFIG.game.resultPanelDelay) / 0.3, 0, 1);
+  if (a <= 0) return;
+  const w = G.winner, pcol = CONFIG.players[w.idx].color;
+  ctx.save(); ctx.globalAlpha = a;
+  panel(270, 560, 440, 540);
+  text(`${CONFIG.players[w.idx].label} 승리!`, 270, 350, { size: 66, color: pcol, strokeW: 12, stroke: '#fff' });
+  drawFrogVisual(w.type, 'win', 270, 452, { scale: 1.7, rot: Math.sin(G.time * 5) * 0.2 });
+  text(`${w.type.name} (${w.type.concept})`, 270, 515, { size: 30, color: '#ffe066' });
+  text(`기록 ${G.elapsed.toFixed(1)}초`, 270, 556, { size: 26 });
+  ctx.restore();
+  if (a >= 0.6) {
+    button({ id: 'again', x: 270, y: 635, w: 320, h: 80, label: '다시하기', size: 34, onClick: startMatch });
+    button({ id: 'reselect', x: 270, y: 725, w: 320, h: 68, label: '개구리 다시 고르기', size: 26, variant: 'sub', onClick: goSelect });
+    button({ id: 'home', x: 270, y: 805, w: 220, h: 56, label: '타이틀로', size: 24, variant: 'sub', onClick: goTitle });
+  }
+}
+
+function render() {
+  ctx.setTransform(view.scale, 0, 0, view.scale, 0, 0);
+  ui.cur = [];
+  drawWorld();
+  switch (G.state) {
+    case 'title': renderTitle(); break;
+    case 'select': renderSelect(); break;
+    case 'countdown': renderCountdown(); break;
+    case 'playing': renderPlaying(); break;
+    case 'paused': renderPlaying(); renderPaused(); break;
+    case 'result': renderResult(); break;
+    default: break;
+  }
+  ui.last = ui.cur;
+}
+
+/* =====================================================================
+ * 13. 크기 조절(레터박스) · 메인 루프 · PWA
+ * ===================================================================== */
+function resize() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const s = Math.min(vw / W, vh / H), dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const cw = Math.floor(W * s), ch = Math.floor(H * s);
+  canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+  canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+  view.scale = canvas.width / W;
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+
+let lastTs = 0;
+function frame(ts) {
+  requestAnimationFrame(frame);
+  const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0;
+  lastTs = ts;
+  update(dt);
+  render();
+}
+
+/* PWA: 설치 버튼 · 서비스 워커 등록 */
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__installPrompt = e; G.installReady = true; });
+window.addEventListener('appinstalled', () => { window.__installPrompt = null; G.installReady = false; });
+if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+  let hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) G.updateReady = true; hadController = true; });
+  window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {}); });
+}
+
+/* 시작 */
+loadPrefs();
+newWorld();
+resetFrogs();
+resize();
+Sprites.load();
+requestAnimationFrame(frame);
+window.__frog = { G, CONFIG, ASSETS, newWorld };   // 디버깅용 훅 (콘솔에서 __frog.G 로 상태 확인)
+
+/* =====================================================================
+ * 확장 가이드
+ *  - 개구리 종류/스탯 추가: CONFIG.frogs 에 { id, name, concept, desc, power, sigma, color, dark } 한 줄 추가
+ *    → 선택 화면 카드·스프라이트 키(frog_<id>_<상태>)가 자동으로 생깁니다. (카드는 5장 기준 레이아웃)
+ *  - 스프라이트 교체: assets/ 폴더에 ASSETS 매니페스트의 src 경로대로 PNG를 넣기만 하면 됩니다.
+ *      예) assets/frogs/balanced/idle.png (64×64, 위쪽을 보는 모양), assets/stone.png, assets/water.png …
+ *      여러 프레임은 가로로 이어 붙이고 ASSETS 의 frames/fps 를 맞춰 주세요.
+ *  - 밸런스: CONFIG.jump(거리·차징·오차), CONFIG.stone(공비·크기·배치 범위) 수정
+ *  - 새 버전 배포: sw.js 의 VERSION 값을 올리면 설치된 앱도 새 파일로 갱신됩니다.
+ * ===================================================================== */
+})();
+</script>
+</body>
+</html>
