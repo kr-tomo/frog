@@ -18,6 +18,8 @@
   body {
     position: fixed; inset: 0; width: 100%; height: 100dvh; overflow: hidden;
     display: flex; align-items: center; justify-content: center;   /* 캔버스는 항상 정중앙, 남는 곳은 레터박스 */
+    box-sizing: border-box;                                          /* 홈 인디케이터·노치 영역은 피해서 배치 */
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
     overscroll-behavior: none; touch-action: none;
     -webkit-user-select: none; user-select: none;
     -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
@@ -39,16 +41,16 @@
  * ===================================================================== */
 const CONFIG = {
   W: 540, H: 960,                                    // 논리 해상도 (세로 고정, 아래→위 진행)
-  island: { startH: 110, goalH: 110 },               // 출발 섬(하단) / 도착 섬(상단) 높이
+  island: { startH: 170, goalH: 110 },               // 출발 섬(하단, 모바일 하단 UI와 겹치지 않게 여유 포함) / 도착 섬(상단) 높이
   stone: {
     count: 7,
-    rx0: 84, ry0: 42,                                // 첫 번째 돌의 타원 반지름
+    rx0: 126, ry0: 63,                               // 첫 번째 돌의 타원 반지름 (기존 84×42의 1.5배)
     ratio: 0.85,                                     // 등비수열 공비 (?ratio=0.8 로 덮어쓰기 가능)
     sideMargin: 16,                                  // 화면 가장자리와의 최소 간격
     maxCenterOffset: 120,                            // 강 중앙선에서 좌우로 벗어날 수 있는 최대 거리
     reachLimit: 0.7,                                 // 연속한 두 돌 사이 거리 ≤ (가장 약한 개구리 최대 점프) × 0.7
     landingSlack: 1.0,                               // 착지 타원 배율 (1.0 = 그림과 상관없는 정확한 타원)
-    visualScale: 1.15                                // 돌 그림만 살짝 크게 (판정 무관)
+    visualScale: 1.05                                // 돌 그림만 살짝 크게 (판정 무관, 돌끼리 그림이 겹치지 않는 선)
   },
   jump: {
     minDist: 40, maxDist: 300,                       // 논리 px
@@ -64,7 +66,7 @@ const CONFIG = {
     touchRadius: 58,                                 // 터치 영역 (그림보다 넉넉하게)
     deadzone: 6,                                     // 중심과 너무 가까운 터치는 방향 무시
     startXs: [0.30, 0.70],                           // P1/P2 출발 위치 (가로 비율)
-    startYRatio: 0.5,                                // 출발 섬 안에서의 세로 위치
+    startYRatio: 0.3,                                // 출발 섬 안에서의 세로 위치 (작을수록 위쪽 → 화면 아래쪽에 여유)
     landTime: 0.18, splashTime: 0.95, spawnTime: 0.35
   },
   game: { countdownStep: 0.8, goShow: 0.7, resultPanelDelay: 0.9 },
@@ -323,14 +325,25 @@ function ell(x, y, rx, ry, rot = 0) { ctx.beginPath(); ctx.ellipse(x, y, Math.ma
 function generateStones(rng) {
   const S = CONFIG.stone, n = S.count;
   const top = CONFIG.island.goalH, bottom = H - CONFIG.island.startH;
-  const gap = (bottom - top) / (n + 1);                      // 강 구간에 균등 배치
+  const river = bottom - top;
+  const ks = Array.from({ length: n }, (_, i) => Math.pow(S.ratio, i));
+  const rys = ks.map((k) => S.ry0 * k);
+  // 돌끼리(그리고 섬과) 세로로 겹치지 않기 위한 최소 길이를 먼저 계산하고,
+  // 남는 길이는 모든 구간에 똑같이 나눠 여백을 균등하게 만든다.
+  let need = rys[0] + rys[n - 1];
+  for (let i = 1; i < n; i++) need += rys[i - 1] + rys[i];
+  const shrink = river < need ? river / need : 1;            // 설정이 극단적이면 비례 축소
+  const pad = Math.max(0, (river - need) / (n + 1));
+  if (DEBUG && river < need) console.warn('강 길이가 부족합니다. 돌이 겹칠 수 있어요.');
   const weakest = Math.min(...CONFIG.frogs.map((f) => f.power));
   const reach = CONFIG.jump.maxDist * weakest * S.reachLimit; // 가장 약한 개구리도 건널 수 있는 상한
   const cx = W / 2, stones = [];
-  let prev = null;
+  let prev = null, cursor = bottom;
   for (let i = 0; i < n; i++) {
-    const k = Math.pow(S.ratio, i);                           // 등비수열로 작아짐
-    const rx = S.rx0 * k, ry = S.ry0 * k, y = bottom - gap * (i + 1);
+    const k = ks[i];                                          // 등비수열로 작아짐
+    const rx = S.rx0 * k, ry = S.ry0 * k;
+    cursor -= (i === 0 ? rys[0] : rys[i - 1] + rys[i]) * shrink + pad;
+    const y = cursor;
     const minX = S.sideMargin + rx, maxX = W - S.sideMargin - rx;
     let lo = Math.max(minX, cx - S.maxCenterOffset), hi = Math.min(maxX, cx + S.maxCenterOffset);
     if (prev) {
@@ -1088,8 +1101,10 @@ function render() {
  * 13. 크기 조절(레터박스) · 메인 루프 · PWA
  * ===================================================================== */
 function resize() {
-  const vw = window.innerWidth, vh = window.innerHeight;
-  const s = Math.min(vw / W, vh / H), dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const cs = getComputedStyle(document.body), px = (v) => parseFloat(v) || 0;
+  const vw = window.innerWidth - px(cs.paddingLeft) - px(cs.paddingRight);
+  const vh = window.innerHeight - px(cs.paddingTop) - px(cs.paddingBottom);
+  const s = Math.max(0.1, Math.min(vw / W, vh / H)), dpr = Math.min(window.devicePixelRatio || 1, 3);
   const cw = Math.floor(W * s), ch = Math.floor(H * s);
   canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
   canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);

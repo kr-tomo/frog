@@ -6,8 +6,9 @@
 | 경로 | 설명 | 권장 크기 |
 |---|---|---|
 | `water.png` | 강 배경 | 540×960 |
-| `island_start.png` / `island_goal.png` | 아래(출발) / 위(도착) 섬 | 540×110 |
-| `stone.png` | 돌 (타원에 맞춰 늘려 그려짐) | 200×100 |
+| `island_start.png` | 아래(출발) 섬 — 하단 여유 포함 | 540×170 |
+| `island_goal.png` | 위(도착) 섬 | 540×110 |
+| `stone.png` | 돌 (타원에 맞춰 늘려 그려짐, 가로:세로 = 2:1 권장) | 300×150 |
 | `frogs/<id>/<상태>.png` | 개구리. id: `balanced` `power` `precise` `leaper` `steady`, 상태: `idle` `charge` `jump` `land` `splash` `win` `lose` | 64×64, **위쪽을 보는 모양** |
 | `fx/shadow.png` `fx/splash.png` `fx/ripple.png` `fx/dust.png` `fx/confetti.png` | 이펙트 (splash 8프레임, ripple 6, dust 5, confetti 4 — 가로로 이어 붙임) | 프레임당 약 140×110 |
 | `ui/gauge_bg.png` `ui/gauge_fill.png` | 차징 게이지 | 64×12 |
