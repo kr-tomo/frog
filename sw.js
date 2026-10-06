@@ -3,7 +3,7 @@
  * - 페이지(index.html): 네트워크 우선(3초 제한) → 실패하면 캐시 (업데이트가 바로 반영됨)
  * - 그 외 같은 출처 파일(assets/ 스프라이트 등): 캐시 먼저 보여주고 뒤에서 갱신(stale-while-revalidate)
  * 새 버전을 배포할 때는 아래 VERSION 값을 올리세요. */
-const VERSION = 'v1.0.1';
+const VERSION = 'v1.0.2';
 const CACHE = 'frog-jump-' + VERSION;
 const PRECACHE = [
   './',

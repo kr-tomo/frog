@@ -44,7 +44,7 @@ const CONFIG = {
   island: { startH: 170, goalH: 110 },               // 출발 섬(하단, 모바일 하단 UI와 겹치지 않게 여유 포함) / 도착 섬(상단) 높이
   stone: {
     count: 7,
-    rx0: 126, ry0: 63,                               // 첫 번째 돌의 타원 반지름 (기존 84×42의 1.5배)
+    rx0: 126, ry0: 44.1,                             // 첫 번째 돌의 타원 반지름 (가로 126 = 기존의 1.5배, 세로 44.1 = 그 세로 63의 70%)
     ratio: 0.85,                                     // 등비수열 공비 (?ratio=0.8 로 덮어쓰기 가능)
     sideMargin: 16,                                  // 화면 가장자리와의 최소 간격
     maxCenterOffset: 120,                            // 강 중앙선에서 좌우로 벗어날 수 있는 최대 거리
@@ -53,7 +53,7 @@ const CONFIG = {
     visualScale: 1.05                                // 돌 그림만 살짝 크게 (판정 무관, 돌끼리 그림이 겹치지 않는 선)
   },
   jump: {
-    minDist: 40, maxDist: 300,                       // 논리 px
+    minDist: 40, maxDist: 225,                       // 논리 px (최대 거리는 기존 300의 75%)
     maxCharge: 1.0,                                  // 게이지가 가득 차는 시간(초)
     ease: (t) => t * t * (3 - 2 * t),                // 누른 시간 → 거리 비율 곡선
     durMin: 0.40, durMax: 0.60,                      // 점프 체공 시간
@@ -62,8 +62,8 @@ const CONFIG = {
     errorClampSigma: 2.5                             // 정규분포 꼬리 제한(σ 단위)
   },
   frog: {
-    radius: 24,                                      // 그림 크기 기준 (판정 무관)
-    touchRadius: 58,                                 // 터치 영역 (그림보다 넉넉하게)
+    radius: 28.8,                                    // 그림 크기 기준 (기존 24의 120%, 판정 무관)
+    touchRadius: 70,                                 // 터치 영역 (기존 58의 120%, 그림보다 넉넉하게)
     deadzone: 6,                                     // 중심과 너무 가까운 터치는 방향 무시
     startXs: [0.30, 0.70],                           // P1/P2 출발 위치 (가로 비율)
     startYRatio: 0.3,                                // 출발 섬 안에서의 세로 위치 (작을수록 위쪽 → 화면 아래쪽에 여유)
@@ -110,6 +110,7 @@ if (PARAMS.has('ratio')) {
  *   ※ 파일이 없거나 로드에 실패하면 Canvas로 그린 임시 그래픽으로 자동 대체됩니다.
  * ===================================================================== */
 const ASSET_DIR = 'assets/';
+const FS = CONFIG.frog.radius / 24;                   // 개구리 관련 그림 크기 배율 (기준 반지름 24 대비)
 const ASSETS = {
   // 배경·지형
   bg_water:     { src: 'water.png',        anchor: [0, 0], size: [W, H] },
@@ -117,7 +118,7 @@ const ASSETS = {
   island_goal:  { src: 'island_goal.png',  anchor: [0, 0], size: [W, CONFIG.island.goalH] },
   stone:        { src: 'stone.png' },                       // 타원 크기에 맞춰 늘려 그림
   // 이펙트
-  fx_shadow:    { src: 'fx/shadow.png',  size: [48, 24] },
+  fx_shadow:    { src: 'fx/shadow.png',  size: [48 * FS, 24 * FS] },
   fx_splash:    { src: 'fx/splash.png',  frames: 8, fps: 10, loop: false, size: [140, 110] },
   fx_ripple:    { src: 'fx/ripple.png',  frames: 6, fps: 6,  loop: false, size: [150, 90] },
   fx_dust:      { src: 'fx/dust.png',    frames: 5, fps: 14, loop: false, size: [80, 50] },
@@ -126,8 +127,8 @@ const ASSETS = {
   ui_gauge_bg:   { src: 'ui/gauge_bg.png',   size: [64, 12] },
   ui_gauge_fill: { src: 'ui/gauge_fill.png', size: [64, 12] },
   ui_arrow:      { src: 'ui/arrow.png',      anchor: [0.5, 1], size: [26, 60] },   // 위쪽을 향한 화살표, 길이는 코드가 조절
-  ui_ring_p1:    { src: 'ui/ring_p1.png',    size: [72, 44] },
-  ui_ring_p2:    { src: 'ui/ring_p2.png',    size: [72, 44] },
+  ui_ring_p1:    { src: 'ui/ring_p1.png',    size: [72 * FS, 44 * FS] },
+  ui_ring_p2:    { src: 'ui/ring_p2.png',    size: [72 * FS, 44 * FS] },
   ui_badge_p1:   { src: 'ui/badge_p1.png',   size: [44, 24] },
   ui_badge_p2:   { src: 'ui/badge_p2.png',   size: [44, 24] },
   // UI — 화면·버튼·아이콘
@@ -151,7 +152,7 @@ const ASSETS = {
 for (const f of CONFIG.frogs) {
   for (const st of FROG_STATES) {
     ASSETS[`frog_${f.id}_${st}`] = {
-      src: `frogs/${f.id}/${st}.png`, size: [64, 64], rotate: true,
+      src: `frogs/${f.id}/${st}.png`, size: [64 * FS, 64 * FS], rotate: true,
       frames: 1, fps: 10, loop: !(st === 'jump' || st === 'land' || st === 'splash')
     };
   }
@@ -1019,7 +1020,7 @@ function renderSelect() {
         ctx.lineWidth = on ? 5 : 2; ctx.strokeStyle = on ? col : 'rgba(255,255,255,0.35)'; ctx.stroke();
       }
       ctx.restore();
-      drawFrogVisual(CONFIG.frogs[i], 'idle', cx, cy - 8, { scale: 1.15 });
+      drawFrogVisual(CONFIG.frogs[i], 'idle', cx, cy - 8, { scale: 1.15 / FS });
       text(CONFIG.frogs[i].concept, cx, cy + 46, { size: 18, maxW: 80 });
     }
     text(`${t.name} (${t.concept})`, 270, y0 + 232, { size: 32, color: '#ffe066' });
@@ -1070,7 +1071,7 @@ function renderResult() {
   ctx.save(); ctx.globalAlpha = a;
   panel(270, 560, 440, 540);
   text(`${CONFIG.players[w.idx].label} 승리!`, 270, 350, { size: 66, color: pcol, strokeW: 12, stroke: '#fff' });
-  drawFrogVisual(w.type, 'win', 270, 452, { scale: 1.7, rot: Math.sin(G.time * 5) * 0.2 });
+  drawFrogVisual(w.type, 'win', 270, 452, { scale: 1.7 / FS, rot: Math.sin(G.time * 5) * 0.2 });
   text(`${w.type.name} (${w.type.concept})`, 270, 515, { size: 30, color: '#ffe066' });
   text(`기록 ${G.elapsed.toFixed(1)}초`, 270, 556, { size: 26 });
   ctx.restore();
