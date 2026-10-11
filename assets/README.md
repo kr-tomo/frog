@@ -13,7 +13,7 @@
 | `island_start.webp` | 아래(출발) 섬. **위쪽 가장자리가 해안선**, 위는 투명 | 1080×340 |
 | `island_goal.webp` | 위(도착) 섬. **아래쪽 가장자리가 해안선**, 결승선(체크무늬) 포함 | 1080×220 |
 | `stone.png` | 돌 (타원에 맞춰 늘려 그려짐, 3:1 권장, 그림자는 코드가 그림) | 600×200 |
-| `stone_slippery.png` | 미끄러운 돌 (한눈에 젖은/얼음 느낌이 나게) | 600×200 |
+| `stone_slippery.png` | 미끄러운 돌 (젖은/얼음 느낌). 한 번 미끄러진 뒤에만 표시되고 그 전에는 `stone.png`로 보임 | 600×200 |
 | `shallow.png` | 얕은 물을 처음 밟은 뒤 나타나는 희미한 그림자 | 240×160 |
 | `particles.png` | 계절 입자 4종을 가로로 이어 붙인 시트 (꽃잎/반짝임/낙엽/눈) | 256×64 (64×64 × 4) |
 | `icon.png` | 설정 화면의 계절 아이콘 | 96×96 |
@@ -31,7 +31,7 @@
 ## 2) 공통 이미지 — `assets/`
 | 경로 | 설명 | 권장 크기 |
 |---|---|---|
-| `shark.png` | 상어. **오른쪽을 보는** 4프레임 시트(가로로 이어 붙임). 왼쪽으로 갈 땐 코드가 뒤집음 | 1024×128 (256×128 × 4) |
+| `shark.png` | 상어. **입 벌린 머리만 수면 위로 내민, 오른쪽을 보는** 4프레임 시트(수면은 이미지 아래쪽에 포함)(가로로 이어 붙임). 왼쪽으로 갈 땐 코드가 뒤집음 | 1024×128 (256×128 × 4) |
 | `frogs/<id>/<상태>.png` | 개구리. id: `balanced` `power` `precise` `leaper` `steady`, 상태: `idle` `charge` `jump` `land` `splash` `slip` `win` `lose` (`idle` 하나만 있어도 전부 대체) | 128×128, **위쪽을 보는 모양** |
 | `fx/shadow.png` `fx/splash.png` `fx/ripple.png` `fx/dust.png` `fx/confetti.png` | 이펙트 (splash 8프레임, ripple 6, dust 5, confetti 4 — 가로로 이어 붙임) | 프레임당 약 140×110 |
 | `ui/gauge_bg.png` `ui/gauge_fill.png` | 차징 게이지 | 64×12 |

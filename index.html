@@ -96,6 +96,7 @@ const CONFIG = {
       rx: 0.55, ry: 0.38,                            // 얕은 물 판정 타원 반지름 (개구리 한 마리 크기의 돌)
       gap: [0.3, 1.0],                               // 옆 돌 가장자리와의 간격 범위
       jitterY: 12,
+      autoReveal: 30,                                // 아무도 밟지 않아도 경기 시작 뒤 이 시간(초)이 지나면 그림자가 드러난다
       revealTime: 0.6                                // 첫 접촉 뒤 그림자가 나타나는 시간(초)
     }
   },
@@ -478,7 +479,7 @@ function buildWorld(rng, opt, lenient) {
       if (lo > hi) { if (!lenient) return null; lo = hi = (lo + hi) / 2; }
       x = lo + rng() * (hi - lo);
     }
-    const base = { x, y, rx, ry, row: i, bob: 0, slippery: false };
+    const base = { x, y, rx, ry, row: i, bob: 0, slippery: false, slipped: false };
     const safe = Object.assign({ idx: stones.length }, base);                  // 이 줄의 "정상" 돌 (다음 돌과의 연결 기준)
     stones.push(safe);
 
@@ -722,7 +723,7 @@ function startSlip(f, s) {
              dur: clamp(dist / 190, O.slideTime[0], O.slideTime[1]) };
   setFrogState(f, 'slip');
   addFx('dust', f.x, f.y, 0.35);
-  s.bob = 1;
+  s.bob = 1; s.slipped = true;                         // 한 번 미끄러진 뒤부터 미끄러운 돌의 정체가 드러난다
   Sfx.slip();
 }
 
@@ -1020,6 +1021,7 @@ function update(dt) {
   } else if (G.state === 'playing') {
     G.elapsed += dt; G.goT += dt;
   }
+  if (G.shallow && !G.shallow.revealed && G.state === 'playing' && G.elapsed >= CONFIG.options.shallow.autoReveal) revealShallow();
   updateShark(dt);                                     // 착지 판정에 쓰이므로 개구리보다 먼저
   updateParticles(dt);
   if (G.shallow && G.shallow.revealed) G.shallow.revealT += dt;
@@ -1125,10 +1127,11 @@ function drawStone(s, tid, preview) {
   const bob = s.bob > 0 ? 1 - Math.sin((1 - s.bob) * Math.PI) * 0.07 : 1;
   const rx = s.rx * vs * bob, ry = s.ry * vs * bob;
   ctx.save(); ctx.fillStyle = 'rgba(0,40,60,0.24)'; ell(s.x + 3, s.y + 6, rx, ry); ctx.fill(); ctx.restore();   // 그림자는 항상 코드로
-  if (!drawSprite(s.slippery ? 'stone_slippery' : 'stone', s.x, s.y, { w: rx * 2, h: ry * 2, theme: tid })) {
-    stonePlaceholder(s.x, s.y, rx, ry, theme(tid).pal, s.slippery, s.idx || 0);
+  const looksSlippery = s.slippery && s.slipped;       // 미끄러지기 전까지는 일반 돌과 똑같이 보인다
+  if (!drawSprite(looksSlippery ? 'stone_slippery' : 'stone', s.x, s.y, { w: rx * 2, h: ry * 2, theme: tid })) {
+    stonePlaceholder(s.x, s.y, rx, ry, theme(tid).pal, looksSlippery, s.idx || 0);
   }
-  if (s.slippery && !preview) drawGlints(s, rx, ry);
+  if (looksSlippery && !preview) drawGlints(s, rx, ry);
 }
 
 /* 얕은 물: 첫 접촉 뒤에만 희미한 그림자가 보인다 (그 전에는 아무것도 그리지 않음) */
@@ -1143,21 +1146,25 @@ function drawShallow() {
   ctx.restore();
 }
 
+/* 상어 임시 그래픽: 입을 벌린 머리만 수면 위로 내민 모습 (오른쪽을 봄, s.dir로 뒤집힘) */
 function sharkPlaceholder(s, pulse) {
-  const L = s.rx * 1.3 * pulse, B = s.ry * 1.05 * pulse, wob = Math.sin(G.time * 9) * B * 0.35;
-  ctx.save(); ctx.translate(s.px, s.py); ctx.scale(s.dir, 1); ctx.globalAlpha = 0.95;
-  const g = ctx.createLinearGradient(0, -B, 0, B); g.addColorStop(0, '#53667a'); g.addColorStop(1, '#8aa0b2');
-  ctx.fillStyle = g; ctx.strokeStyle = '#2f3f50'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
-  ctx.beginPath(); ctx.moveTo(L, 0);
-  ctx.bezierCurveTo(L * 0.5, -B, -L * 0.4, -B * 0.8, -L * 0.8, -B * 0.12 + wob * 0.3);
-  ctx.lineTo(-L * 1.15, -B * 0.85 + wob); ctx.lineTo(-L * 0.98, wob * 0.5); ctx.lineTo(-L * 1.15, B * 0.85 + wob); ctx.lineTo(-L * 0.8, B * 0.12 + wob * 0.3);
-  ctx.bezierCurveTo(-L * 0.4, B * 0.8, L * 0.5, B, L, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#3d4f61';
-  for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(L * 0.3, sd * B * 0.55); ctx.lineTo(-L * 0.05, sd * B * 1.35); ctx.lineTo(-L * 0.15, sd * B * 0.55); ctx.closePath(); ctx.fill(); ctx.stroke(); }
-  ctx.beginPath(); ctx.moveTo(L * 0.2, 0); ctx.lineTo(-L * 0.3, -B * 0.2); ctx.lineTo(-L * 0.5, 0); ctx.lineTo(-L * 0.3, B * 0.2); ctx.closePath(); ctx.fill(); ctx.stroke();   // 등지느러미
-  ctx.fillStyle = '#10202c';
-  for (const sd of [-1, 1]) { ctx.beginPath(); ctx.arc(L * 0.68, sd * B * 0.38, 2, 0, TAU); ctx.fill(); }
+  const L = s.rx * 1.25 * pulse, B = s.ry * 1.5 * pulse, open = (0.35 + 0.25 * Math.sin(G.time * 5)) * B;
+  ctx.save(); ctx.translate(s.px, s.py + B * 0.5); ctx.scale(s.dir, 1);
+  ctx.lineJoin = 'round'; ctx.lineWidth = 2; ctx.strokeStyle = '#2f3f50';
+  ctx.fillStyle = '#7088a0';                                                   // 머리
+  ctx.beginPath(); ctx.moveTo(-L * 0.7, 0); ctx.quadraticCurveTo(-L * 0.5, -B * 1.5, L * 0.1, -B * 1.4);
+  ctx.quadraticCurveTo(L * 0.8, -B * 1.2, L, -B * 0.3); ctx.lineTo(L * 0.1, -B * 0.1); ctx.lineTo(-L * 0.6, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#962834';                                                   // 입 안
+  ctx.beginPath(); ctx.moveTo(-L * 0.2, -B * 0.1); ctx.lineTo(L, -B * 0.3); ctx.lineTo(L * 0.9, open); ctx.lineTo(-L * 0.1, open * 0.5); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#b0c4d4';                                                   // 아랫턱
+  ctx.beginPath(); ctx.moveTo(-L * 0.3, open * 0.4); ctx.lineTo(L * 0.9, open); ctx.lineTo(L * 0.7, open + B * 0.35); ctx.lineTo(-L * 0.4, B * 0.5); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#fff';                                                      // 이빨
+  for (let i = 0; i < 5; i++) { const x = L * (0.15 + i * 0.16); ctx.beginPath(); ctx.moveTo(x, -B * 0.2); ctx.lineTo(x + L * 0.1, -B * 0.22); ctx.lineTo(x + L * 0.05, B * 0.05); ctx.fill(); }
+  ctx.beginPath(); ctx.arc(L * 0.3, -B * 0.85, B * 0.22, 0, TAU); ctx.fill(); ctx.fillStyle = '#10202c';   // 눈
+  ctx.beginPath(); ctx.arc(L * 0.33, -B * 0.83, B * 0.12, 0, TAU); ctx.fill();
   ctx.restore();
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 2.5;  // 수면 물보라
+  ell(s.px, s.py + B * 0.5, L * 1.05, B * 0.3); ctx.stroke(); ctx.restore();
 }
 
 function drawShark() {
@@ -1172,8 +1179,8 @@ function drawShark() {
   }
   ctx.restore();
   ctx.save(); ctx.globalAlpha = 0.16; ctx.fillStyle = '#031a28'; ell(s.px + 2, s.py + 6, s.rx * 1.15 * pulse, s.ry * 1.1 * pulse); ctx.fill(); ctx.restore();   // 물속 그림자(눈에 잘 띄도록)
-  const w = s.rx * 2 * 1.3 * pulse;
-  if (!drawSprite('shark', s.px, s.py, { w, h: w / 2, sx: s.dir, alpha: 0.96 })) sharkPlaceholder(s, pulse);
+  const w = s.rx * 2 * 1.4 * pulse;
+  if (!drawSprite('shark', s.px, s.py, { w, h: w / 2, sx: s.dir })) sharkPlaceholder(s, pulse);
 }
 
 /* 계절 입자: 'twinkle'(반짝임)은 물 위, 'fall'(꽃잎·낙엽·눈)은 개구리 위에 그린다 */
