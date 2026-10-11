@@ -44,17 +44,17 @@ const CONFIG = {
   island: { startH: 170, goalH: 110 },               // 출발 섬(하단, 모바일 하단 UI와 겹치지 않게 여유 포함) / 도착 섬(상단) 높이
   stone: {
     count: 7,
-    rx0: 126, ry0: 44.1,                             // 첫 번째 돌의 타원 반지름 (가로 126 = 기존의 1.5배, 세로 44.1 = 그 세로 63의 70%)
+    rx0: 113.4, ry0: 39.69,                          // 첫 번째 돌의 타원 반지름 (옵션이 들어갈 자리를 위해 기존 126×44.1의 0.9배)
     ratio: 0.85,                                     // 등비수열 공비 (?ratio=0.8 로 덮어쓰기 가능)
     sideMargin: 16,                                  // 화면 가장자리와의 최소 간격
-    maxCenterOffset: 120,                            // 강 중앙선에서 좌우로 벗어날 수 있는 최대 거리
+    maxCenterOffset: 132,                            // 강 중앙선에서 좌우로 벗어날 수 있는 최대 거리 (배치 편차, 기존 120의 1.1배)
     reachLimit: 0.7,                                 // 연속한 두 돌 사이 거리 ≤ (가장 약한 개구리 최대 점프) × 0.7
     landingSlack: 1.0,                               // 착지 타원 배율 (1.0 = 그림과 상관없는 정확한 타원)
     visualScale: 1.05                                // 돌 그림만 살짝 크게 (판정 무관, 돌끼리 그림이 겹치지 않는 선)
   },
   jump: {
     minDist: 40, maxDist: 225,                       // 논리 px (최대 거리는 기존 300의 75%)
-    maxCharge: 1.0,                                  // 게이지가 가득 차는 시간(초)
+    maxCharge: 1.25,                                 // 게이지가 가득 차는 시간(초) — 차오르는 속도 0.8배 (1.0초 → 1.25초)
     ease: (t) => t * t * (3 - 2 * t),                // 누른 시간 → 거리 비율 곡선
     durMin: 0.40, durMax: 0.60,                      // 점프 체공 시간
     heightMin: 26, heightMax: 70,                    // 포물선 높이(시각 효과)
@@ -74,6 +74,48 @@ const CONFIG = {
     { label: 'P1', color: '#3da5ff' },
     { label: 'P2', color: '#ff5c5c' }
   ],
+  /* 게임 옵션 3종 — 시작 전에 설정 화면에서 켜고 끕니다.
+   * 켜진 옵션은 맵 "위쪽 절반"의 돌 줄 중 서로 다른 줄에 하나씩만 배치됩니다(한 줄에 둘 이상 겹치지 않음).
+   * 길이 단위는 "개구리 크기"(= 개구리 지름, frog.radius × 2) 배수입니다. */
+  options: {
+    edgeMargin: 6,                                   // 옵션 요소가 화면 가장자리와 두는 최소 간격(px)
+    shark: {
+      rx: 0.52, ry: 0.30,                            // 상어 판정 타원 반지름 (개구리 크기만 한 상어)
+      clearance: 0.2,                                // 돌과 항상 두는 최소 거리 (이동 동선 전체 기준)
+      swing: 0.5,                                    // 좌우로 움직이는 거리(한쪽 진폭)
+      period: [2.6, 3.4],                            // 한 번 왕복하는 시간(초) 범위
+      jitterY: 8,                                    // 줄 높이에서 위아래로 흩어지는 정도(px)
+      biteTime: 0.7                                  // 잡아먹은 뒤 결과 화면까지 걸리는 시간(초)
+    },
+    slippery: {
+      gap: 0.6,                                      // 쌍둥이 돌 사이 간격
+      slideExtra: 0.35,                              // 미끄러져 돌 가장자리를 벗어나 더 나가는 거리
+      slideTime: [0.35, 0.8]                         // 미끄러지는 시간(초) 범위
+    },
+    shallow: {
+      rx: 0.55, ry: 0.38,                            // 얕은 물 판정 타원 반지름 (개구리 한 마리 크기의 돌)
+      gap: [0.3, 1.0],                               // 옆 돌 가장자리와의 간격 범위
+      jitterY: 12,
+      revealTime: 0.6                                // 첫 접촉 뒤 그림자가 나타나는 시간(초)
+    }
+  },
+  /* 테마(계절) — 새 테마는 아래에 한 항목을 추가하고 assets/themes/<id>/ 폴더에 이미지를 넣으면 됩니다.
+   * pal: 이미지가 없을 때 쓰는 임시 그래픽 색 · particles: 계절 입자(꽃잎·반짝임·낙엽·눈) 동작 */
+  defaultTheme: 'spring',
+  themes: [
+    { id: 'spring', name: '봄',
+      pal: { waterA: '#5ec8d8', waterB: '#2a8fb0', landA: '#b2cf84', landB: '#86ab5e', stoneA: '#e4dfd4', stoneB: '#a7a292', stoneEdge: '#7d786b', slick: '#9fd8ff', ripple: '255,255,255', pc: ['#ffc0d6', '#ffffff', '#ff9fc0', '#ffe3ee'] },
+      particles: { mode: 'fall', count: 14, vy: [22, 44], vx: [-12, 12], sway: 14, spin: 1.6, size: [13, 20], alpha: 0.9 } },
+    { id: 'summer', name: '여름',
+      pal: { waterA: '#2fc0e8', waterB: '#0b6aa8', landA: '#b3cf72', landB: '#86ac4c', stoneA: '#ebe0c8', stoneB: '#aa9f80', stoneEdge: '#827750', slick: '#a8e4ff', ripple: '255,255,255', pc: ['#ffffff', '#fff6a8', '#bff3ff', '#ffffff'] },
+      particles: { mode: 'twinkle', count: 22, size: [10, 18], speed: [1.2, 2.4], alpha: 0.95 } },
+    { id: 'autumn', name: '가을',
+      pal: { waterA: '#4fa3a0', waterB: '#256a78', landA: '#d6a64a', landB: '#b27a30', stoneA: '#c9bfae', stoneB: '#857b6c', stoneEdge: '#5f574b', slick: '#8fd0e0', ripple: '255,240,210', pc: ['#e8552a', '#f0a030', '#e8c53a', '#a8612a'] },
+      particles: { mode: 'fall', count: 12, vy: [26, 50], vx: [-16, 16], sway: 22, spin: 2.2, size: [16, 24], alpha: 0.92 } },
+    { id: 'winter', name: '겨울',
+      pal: { waterA: '#b7e0f4', waterB: '#6fb0d6', landA: '#eef6fb', landB: '#cfe3ee', stoneA: '#f2f7fb', stoneB: '#b4c7d4', stoneEdge: '#8aa2b3', slick: '#d6f0ff', ripple: '255,255,255', pc: ['#ffffff', '#e6f4ff', '#d4ecff', '#ffffff'] },
+      particles: { mode: 'fall', count: 34, vy: [18, 38], vx: [-8, 8], sway: 10, spin: 1.0, size: [9, 16], alpha: 0.95 } }
+  ],
   /* 개구리 5종 — 새 종류를 추가하려면 한 줄만 더하면 됩니다.
    * (스프라이트는 assets/frogs/<id>/<상태>.png 로 자동 연결됩니다) */
   frogs: [
@@ -85,7 +127,7 @@ const CONFIG = {
   ]
 };
 
-const FROG_STATES = ['idle', 'charge', 'jump', 'land', 'splash', 'win', 'lose'];
+const FROG_STATES = ['idle', 'charge', 'jump', 'land', 'splash', 'slip', 'win', 'lose'];   // slip: 미끄러운 돌 위에서 미끄러지는 중
 const TAU = Math.PI * 2;
 const W = CONFIG.W, H = CONFIG.H;
 
@@ -112,11 +154,8 @@ if (PARAMS.has('ratio')) {
 const ASSET_DIR = 'assets/';
 const FS = CONFIG.frog.radius / 24;                   // 개구리 관련 그림 크기 배율 (기준 반지름 24 대비)
 const ASSETS = {
-  // 배경·지형
-  bg_water:     { src: 'water.png',        anchor: [0, 0], size: [W, H] },
-  island_start: { src: 'island_start.png', anchor: [0, 0], size: [W, CONFIG.island.startH] },
-  island_goal:  { src: 'island_goal.png',  anchor: [0, 0], size: [W, CONFIG.island.goalH] },
-  stone:        { src: 'stone.png' },                       // 타원 크기에 맞춰 늘려 그림
+  // 상어(옵션) — 오른쪽을 보는 4프레임 시트. 왼쪽으로 헤엄칠 땐 코드가 뒤집어 그립니다
+  shark:        { src: 'shark.png', frames: 4, fps: 8, loop: true, size: [76, 38] },
   // 이펙트
   fx_shadow:    { src: 'fx/shadow.png',  size: [48 * FS, 24 * FS] },
   fx_splash:    { src: 'fx/splash.png',  frames: 8, fps: 10, loop: false, size: [140, 110] },
@@ -145,7 +184,27 @@ const ASSETS = {
   ui_count_3:    { src: 'ui/count_3.png' },
   ui_count_2:    { src: 'ui/count_2.png' },
   ui_count_1:    { src: 'ui/count_1.png' },
-  ui_go:         { src: 'ui/go.png' }
+  ui_go:         { src: 'ui/go.png' },
+  // UI — 설정 화면 (토글 스위치, 옵션 아이콘)
+  ui_toggle_on:  { src: 'ui/toggle_on.png',  size: [78, 40] },
+  ui_toggle_off: { src: 'ui/toggle_off.png', size: [78, 40] },
+  icon_opt_shark:    { src: 'ui/icon_opt_shark.png',    size: [44, 44] },
+  icon_opt_slippery: { src: 'ui/icon_opt_slippery.png', size: [44, 44] },
+  icon_opt_shallow:  { src: 'ui/icon_opt_shallow.png',  size: [44, 44] }
+};
+/* 테마별 스프라이트 — 실제 경로는 assets/themes/<테마 id>/<src> 입니다.
+ * 테마 폴더에 파일이 없으면 기본 테마(defaultTheme) 폴더의 같은 파일로 대신하고, 그것도 없으면 임시 그래픽을 씁니다.
+ * (새 테마는 이 파일들을 새 폴더에 넣기만 하면 됩니다. 일부만 넣어도 동작합니다.) */
+const THEME_DIR = 'themes/';
+const THEME_ASSETS = {
+  bg_water:       { src: 'water.webp',        anchor: [0, 0], size: [W, H] },                       // 강 배경 (1080×1920 권장)
+  island_start:   { src: 'island_start.webp', anchor: [0, 0], size: [W, CONFIG.island.startH] },   // 아래 섬, 위쪽이 해안선 (1080×340)
+  island_goal:    { src: 'island_goal.webp',  anchor: [0, 0], size: [W, CONFIG.island.goalH] },    // 위 섬, 아래쪽이 해안선 + 결승선 (1080×220)
+  stone:          { src: 'stone.png' },                                                            // 타원 돌 (600×200), 판정 크기에 맞춰 늘려 그림
+  stone_slippery: { src: 'stone_slippery.png' },                                                   // 미끄러운 돌 (600×200)
+  fx_shallow:     { src: 'shallow.png' },                                                          // 얕은 물 첫 접촉 뒤에 보이는 희미한 그림자 (240×160)
+  fx_season:      { src: 'particles.png', frames: 4 },                                             // 계절 입자 4종 시트 (256×64)
+  ui_theme_icon:  { src: 'icon.png', size: [48, 48] }                                              // 설정 화면의 계절 아이콘 (96×96)
 };
 // 개구리 스프라이트 키: frog_<id>_<상태>  (상태: idle charge jump land splash win lose)
 // 단일 이미지(idle)만 있어도 동작합니다 — 없는 상태는 idle 이미지로 대체됩니다.
@@ -159,14 +218,24 @@ for (const f of CONFIG.frogs) {
 }
 
 const Sprites = {
-  images: {},
+  images: {},                                          // 공통: 키 그대로 · 테마용: '<테마id>/<키>'
+  loadChain(storeKey, urls) {                          // urls를 차례로 시도, 모두 실패하면 임시 그래픽 사용
+    let i = 0;
+    const img = new Image();
+    img.onload = () => { Sprites.images[storeKey] = img; };
+    img.onerror = () => { if (++i < urls.length) img.src = urls[i]; };
+    img.src = urls[0];
+  },
   load() {
     if (PARAMS.has('noassets')) return;
-    for (const key of Object.keys(ASSETS)) {
-      const img = new Image();
-      img.onload = () => { Sprites.images[key] = img; };
-      img.onerror = () => { /* 없으면 임시 그래픽 사용 */ };
-      img.src = ASSET_DIR + ASSETS[key].src;
+    for (const key of Object.keys(ASSETS)) this.loadChain(key, [ASSET_DIR + ASSETS[key].src]);
+    const def = CONFIG.defaultTheme;
+    for (const t of CONFIG.themes) {
+      for (const key of Object.keys(THEME_ASSETS)) {
+        const src = THEME_ASSETS[key].src, urls = [ASSET_DIR + THEME_DIR + t.id + '/' + src];
+        if (t.id !== def) urls.push(ASSET_DIR + THEME_DIR + def + '/' + src);
+        this.loadChain(t.id + '/' + key, urls);
+      }
     }
   }
 };
@@ -179,14 +248,22 @@ const ctx = canvas.getContext('2d');
 const view = { scale: 1 };
 
 const G = {
-  state: 'title',            // title | select | countdown | playing | paused | result
+  state: 'title',            // title | select | options | countdown | playing | paused | result
   stateT: 0, time: 0, elapsed: 0, goT: 99,
   seed: 0, stones: [], frogs: [], fx: [], confetti: [],
+  shark: null, shallow: null, world: null,   // 옵션 요소 (꺼져 있으면 null)
+  sharkLoss: null, loseInfo: null,           // 상어에게 잡아먹힌 개구리 / 결과 화면용 패배 사유
+  particles: [],                             // 계절 입자
+  options: { shark: false, slippery: false, shallow: false },   // 시작 전에 켜고 끄는 옵션
+  theme: CONFIG.defaultTheme,
   selection: [0, 0],         // P1/P2가 고른 개구리 종류(인덱스)
   winner: null, lastCount: 4,
   updateReady: false, installReady: false
 };
 let jumpRng = Math.random;
+const OPTION_KEYS = ['shark', 'slippery', 'shallow'];
+const theme = (id) => CONFIG.themes.find((t) => t.id === (id || G.theme)) || CONFIG.themes[0];
+const frogSize = () => CONFIG.frog.radius * 2;          // 옵션 길이 단위: 개구리 크기
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -208,12 +285,21 @@ function loadPrefs() {
     const sel = JSON.parse(localStorage.getItem('frogjump.sel') || 'null');
     if (Array.isArray(sel) && sel.length === 2 && sel.every((n) => Number.isInteger(n) && n >= 0 && n < CONFIG.frogs.length)) G.selection = sel;
     Sfx.muted = localStorage.getItem('frogjump.muted') === '1';
+    const op = JSON.parse(localStorage.getItem('frogjump.opts') || 'null');
+    if (op && typeof op === 'object') for (const k of OPTION_KEYS) G.options[k] = op[k] === true;
+    const th = localStorage.getItem('frogjump.theme');
+    if (th && CONFIG.themes.some((t) => t.id === th)) G.theme = th;
   } catch (e) { /* 저장소를 못 쓰는 환경 */ }
+  // 디버그/공유용 URL 파라미터: ?theme=winter  ?opts=shark,slippery,shallow (또는 ?opts=none)
+  if (PARAMS.has('theme') && CONFIG.themes.some((t) => t.id === PARAMS.get('theme'))) G.theme = PARAMS.get('theme');
+  if (PARAMS.has('opts')) { const on = PARAMS.get('opts').split(','); for (const k of OPTION_KEYS) G.options[k] = on.includes(k); }
 }
 function savePrefs() {
   try {
     localStorage.setItem('frogjump.sel', JSON.stringify(G.selection));
     localStorage.setItem('frogjump.muted', Sfx.muted ? '1' : '0');
+    localStorage.setItem('frogjump.opts', JSON.stringify(G.options));
+    localStorage.setItem('frogjump.theme', G.theme);
   } catch (e) { /* 무시 */ }
 }
 
@@ -259,16 +345,23 @@ const Sfx = {
   jump()   { this.tone(320, 640, 0.14, 'sine', 0.16); },
   land()   { this.tone(200, 90, 0.12, 'triangle', 0.2); },
   splash() { this.noise(0.4, 0.22, 1600); this.tone(500, 160, 0.25, 'sine', 0.08); },
-  win()    { [523, 659, 784, 1046].forEach((f, i) => this.tone(f, f, 0.22, 'triangle', 0.16, i * 0.11)); }
+  win()    { [523, 659, 784, 1046].forEach((f, i) => this.tone(f, f, 0.22, 'triangle', 0.16, i * 0.11)); },
+  slip()   { this.tone(900, 260, 0.35, 'sine', 0.12); this.noise(0.18, 0.08, 3200); },
+  bite()   { this.noise(0.35, 0.3, 900); this.tone(180, 60, 0.4, 'sawtooth', 0.14); this.tone(120, 50, 0.3, 'square', 0.08, 0.12); },
+  reveal() { this.tone(520, 780, 0.2, 'sine', 0.1); this.tone(780, 1040, 0.2, 'sine', 0.07, 0.1); }
 };
 
 /* =====================================================================
  * 5. 유틸: 스프라이트 그리기 / 텍스트 / 도형
  * ===================================================================== */
+/* 스프라이트 찾기: 테마용 키는 '<테마id>/<키>' 이미지를, 공통 키는 그대로 찾는다 (o.theme으로 다른 테마 지정 가능) */
+function resolveSprite(key, tid) {
+  if (THEME_ASSETS[key]) return { img: Sprites.images[(tid || G.theme) + '/' + key], def: THEME_ASSETS[key] };
+  return { img: Sprites.images[key], def: ASSETS[key] };
+}
 function drawSprite(key, x, y, o = {}) {
-  const img = Sprites.images[key];
+  const { img, def } = resolveSprite(key, o.theme);
   if (!img) return false;
-  const def = ASSETS[key];
   const frames = def.frames || 1;
   const fw = img.naturalWidth / frames, fh = img.naturalHeight;
   let fi = 0;
@@ -323,63 +416,213 @@ function ell(x, y, rx, ry, rot = 0) { ctx.beginPath(); ctx.ellipse(x, y, Math.ma
 /* =====================================================================
  * 6. 월드: 돌 배치 생성 · 착지 판정 (이미지와 완전히 분리)
  * ===================================================================== */
-function generateStones(rng) {
-  const S = CONFIG.stone, n = S.count;
-  const top = CONFIG.island.goalH, bottom = H - CONFIG.island.startH;
-  const river = bottom - top;
-  const ks = Array.from({ length: n }, (_, i) => Math.pow(S.ratio, i));
+function shuffle(arr, rng) {
+  for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+  return arr;
+}
+
+/* 옵션 요소가 돌 옆에 들어가려면 필요한 "돌 가장자리 ~ 화면 가장자리" 최소 폭 */
+function sideRoomNeeded(kind, rx) {
+  const O = CONFIG.options, FZ = frogSize(), em = O.edgeMargin;
+  if (kind === 'shark') return O.shark.clearance * FZ + 2 * (O.shark.swing * FZ + O.shark.rx * FZ) + em;   // 돌과의 거리 + 상어 동선 전체 폭
+  if (kind === 'slippery') return O.slippery.gap * FZ + 2 * rx + CONFIG.stone.sideMargin;                  // 쌍둥이 돌 한 개가 더 들어갈 폭
+  return O.shallow.gap[0] * FZ + 2 * O.shallow.rx * FZ + em;                                               // 얕은 물 영역 폭
+}
+
+/* 한 번 배치해 본다. 조건을 만족하지 못하면 null (generateWorld가 다시 시도) */
+function buildWorld(rng, opt, lenient) {
+  const S = CONFIG.stone, O = CONFIG.options, FZ = frogSize(), n = S.count, em = O.edgeMargin;
+  const top = CONFIG.island.goalH, bottom = H - CONFIG.island.startH, river = bottom - top;
+  const ks = Array.from({ length: n }, (_, i) => Math.pow(S.ratio, i));      // 등비수열로 작아짐
   const rys = ks.map((k) => S.ry0 * k);
   // 돌끼리(그리고 섬과) 세로로 겹치지 않기 위한 최소 길이를 먼저 계산하고,
   // 남는 길이는 모든 구간에 똑같이 나눠 여백을 균등하게 만든다.
   let need = rys[0] + rys[n - 1];
   for (let i = 1; i < n; i++) need += rys[i - 1] + rys[i];
-  const shrink = river < need ? river / need : 1;            // 설정이 극단적이면 비례 축소
+  const shrink = river < need ? river / need : 1;                              // 설정이 극단적이면 비례 축소
   const pad = Math.max(0, (river - need) / (n + 1));
   if (DEBUG && river < need) console.warn('강 길이가 부족합니다. 돌이 겹칠 수 있어요.');
+  const ys = [];
+  { let c = bottom; for (let i = 0; i < n; i++) { c -= (i === 0 ? rys[0] : rys[i - 1] + rys[i]) * shrink + pad; ys.push(c); } }
+
+  // 옵션 배치 줄: "맵 위쪽 절반"에 있는 돌 줄 중 서로 다른 줄에 하나씩
+  const mid = (top + bottom) / 2;
+  const upper = shuffle(ys.map((y, i) => i).filter((i) => ys[i] < mid), rng);
+  const kinds = shuffle(OPTION_KEYS.filter((k) => opt[k]), rng);
+  if (kinds.length > upper.length) return null;
+  const rowOpt = Array(n).fill(null);
+  kinds.forEach((k, i) => { rowOpt[upper[i]] = k; });
+
   const weakest = Math.min(...CONFIG.frogs.map((f) => f.power));
-  const reach = CONFIG.jump.maxDist * weakest * S.reachLimit; // 가장 약한 개구리도 건널 수 있는 상한
+  const reach = CONFIG.jump.maxDist * weakest * S.reachLimit;                  // 가장 약한 개구리도 건널 수 있는 상한
   const cx = W / 2, stones = [];
-  let prev = null, cursor = bottom;
+  let prev = null, shark = null, shallow = null;
   for (let i = 0; i < n; i++) {
-    const k = ks[i];                                          // 등비수열로 작아짐
-    const rx = S.rx0 * k, ry = S.ry0 * k;
-    cursor -= (i === 0 ? rys[0] : rys[i - 1] + rys[i]) * shrink + pad;
-    const y = cursor;
+    const rx = S.rx0 * ks[i], ry = rys[i], y = ys[i], kind = rowOpt[i];
     const minX = S.sideMargin + rx, maxX = W - S.sideMargin - rx;
     let lo = Math.max(minX, cx - S.maxCenterOffset), hi = Math.min(maxX, cx + S.maxCenterOffset);
-    if (prev) {
+    if (prev) {                                                                // 앞 돌에서 건널 수 있는 범위
       const dy = prev.y - y, dx = Math.sqrt(Math.max(0, reach * reach - dy * dy));
       lo = Math.max(lo, prev.x - dx); hi = Math.min(hi, prev.x + dx);
     }
-    if (lo > hi) lo = hi = (lo + hi) / 2;
-    const x = lo + rng() * (hi - lo);
-    prev = { idx: i, x, y, rx, ry, bob: 0 };
-    stones.push(prev);
-  }
-  if (DEBUG) {                                                // 겹침 검사 (개발용)
-    for (let i = 0; i < stones.length; i++) for (let j = i + 1; j < stones.length; j++) {
-      const a = stones[i], b = stones[j];
-      if (Math.abs(a.y - b.y) < a.ry + b.ry && Math.abs(a.x - b.x) < a.rx + b.rx) console.warn('돌 겹침', i, j);
+    let x, side = 0;                                                           // side: 옵션 요소가 있는 쪽 (-1 왼쪽 / +1 오른쪽)
+    if (kind) {
+      const room = sideRoomNeeded(kind, rx), cands = [];
+      const L = [Math.max(lo, room + rx), hi], R = [lo, Math.min(hi, W - room - rx)];
+      if (L[0] <= L[1]) cands.push([-1, L]);
+      if (R[0] <= R[1]) cands.push([1, R]);
+      if (!cands.length) return null;
+      const pick = cands[Math.floor(rng() * cands.length)];
+      side = pick[0]; x = pick[1][0] + rng() * (pick[1][1] - pick[1][0]);
+    } else {
+      if (lo > hi) { if (!lenient) return null; lo = hi = (lo + hi) / 2; }
+      x = lo + rng() * (hi - lo);
     }
+    const base = { x, y, rx, ry, row: i, bob: 0, slippery: false };
+    const safe = Object.assign({ idx: stones.length }, base);                  // 이 줄의 "정상" 돌 (다음 돌과의 연결 기준)
+    stones.push(safe);
+
+    if (kind === 'slippery') {                                                 // 쌍둥이 돌: 옆에 하나 더, 그쪽이 미끄럽다
+      const gap = O.slippery.gap * FZ;
+      stones.push(Object.assign({}, base, { idx: stones.length, x: x + side * (2 * rx + gap), slippery: true }));
+    } else if (kind === 'shark') {
+      const srx = O.shark.rx * FZ, sry = O.shark.ry * FZ, swing = O.shark.swing * FZ, clr = O.shark.clearance * FZ, half = swing + srx;
+      const c0 = side > 0 ? x + rx + clr + half : em + half;                   // 동선 전체(진폭+몸 길이)가 돌에서 clr 이상 떨어지도록
+      const c1 = side > 0 ? W - em - half : x - rx - clr - half;
+      if (c0 > c1) return null;
+      const scx = c0 + rng() * (c1 - c0), sy = y + (rng() * 2 - 1) * O.shark.jitterY;
+      shark = { row: i, cx: scx, y: sy, swing, rx: srx, ry: sry, half, period: lerp(O.shark.period[0], O.shark.period[1], rng()),
+                phase: rng() * TAU, t: 0, px: scx, py: sy, dir: 1, bite: null };
+    } else if (kind === 'shallow') {
+      const rxS = O.shallow.rx * FZ, ryS = O.shallow.ry * FZ, g0 = O.shallow.gap[0] * FZ, g1 = O.shallow.gap[1] * FZ;
+      const avail = side > 0 ? (W - em) - (x + rx) : (x - rx) - em;
+      const gmax = Math.min(g1, avail - 2 * rxS);
+      if (gmax < g0 - 1e-9) return null;
+      const g = g0 + rng() * Math.max(0, gmax - g0);
+      shallow = { row: i, x: x + side * (rx + g + rxS), y: y + (rng() * 2 - 1) * O.shallow.jitterY, rx: rxS, ry: ryS, revealed: false, revealT: 0 };
+    }
+    prev = safe;
   }
-  return stones;
+  return { stones, shark, shallow, rowOpt, ys };
+}
+
+function generateWorld(rng, opt) {
+  for (let a = 0; a < 80; a++) {
+    const w = buildWorld(rng, opt, false);
+    if (w) { w.attempts = a + 1; return w; }
+  }
+  const w = buildWorld(rng, { shark: false, slippery: false, shallow: false }, true);   // 최후의 수단: 옵션 없이
+  w.fallback = true;
+  return w;
+}
+
+/* 배치 검증 (개발·테스트용): 문제가 있으면 항목 이름 배열을 돌려준다 */
+function validateWorld(w, opt) {
+  const S = CONFIG.stone, O = CONFIG.options, FZ = frogSize(), em = O.edgeMargin, bad = [];
+  const top = CONFIG.island.goalH, bottom = H - CONFIG.island.startH, mid = (top + bottom) / 2;
+  const pts = (e, k = 160) => Array.from({ length: k }, (_, i) => [e.x + e.rx * Math.cos(TAU * i / k), e.y + e.ry * Math.sin(TAU * i / k)]);
+  const minD = (A, B) => { let m = 1e9; for (const p of A) for (const q of B) m = Math.min(m, Math.hypot(p[0] - q[0], p[1] - q[1])); return m; };
+  const inside = (p, e) => ((p.x - e.x) / e.rx) ** 2 + ((p.y - e.y) / e.ry) ** 2 < 1;
+  const rectD = (px, py, r) => Math.hypot(Math.max(r.x0 - px, 0, px - r.x1), Math.max(r.y0 - py, 0, py - r.y1));
+  const st = w.stones;
+  for (const s of st) {
+    if (s.x - s.rx < S.sideMargin - 1e-6 || s.x + s.rx > W - S.sideMargin + 1e-6) bad.push('stone-edge');
+    if (s.y - s.ry < top - 1e-6 || s.y + s.ry > bottom + 1e-6) bad.push('stone-river');
+  }
+  for (let i = 0; i < st.length; i++) for (let j = i + 1; j < st.length; j++) {
+    if (inside(st[i], st[j]) || inside(st[j], st[i]) || minD(pts(st[i], 90), pts(st[j], 90)) < 2) bad.push('stone-overlap');
+  }
+  const weakest = Math.min(...CONFIG.frogs.map((f) => f.power)), reach = CONFIG.jump.maxDist * weakest * S.reachLimit;
+  const chain = st.filter((s) => !s.slippery);
+  if (chain.length !== S.count) bad.push('chain-count');
+  chain.forEach((s, k) => {
+    if (s.row !== k) bad.push('chain-row');
+    if (Math.abs(s.rx / (S.rx0 * Math.pow(S.ratio, k)) - 1) > 1e-9) bad.push('ratio');
+    if (k > 0 && Math.hypot(s.x - chain[k - 1].x, s.y - chain[k - 1].y) > reach + 1e-6) bad.push('reach');
+  });
+  // 옵션 줄 규칙
+  const enabled = OPTION_KEYS.filter((k) => opt[k]);
+  if (w.rowOpt.filter(Boolean).length !== enabled.length) bad.push('option-count');
+  const rowOf = { shark: w.shark && w.shark.row, shallow: w.shallow && w.shallow.row, slippery: (st.find((s) => s.slippery) || {}).row };
+  for (const k of OPTION_KEYS) {
+    if (!opt[k]) { if (rowOf[k] !== undefined && rowOf[k] !== null && rowOf[k] !== false) bad.push('unexpected-' + k); continue; }
+    if (rowOf[k] === undefined || rowOf[k] === null) { bad.push('missing-' + k); continue; }
+    if (w.rowOpt[rowOf[k]] !== k) bad.push('row-mismatch-' + k);
+    if (!(w.ys[rowOf[k]] < mid)) bad.push('not-upper-' + k);
+  }
+  if (opt.slippery) {
+    const sl = st.filter((s) => s.slippery);
+    if (sl.length !== 1 || st.filter((s) => s.row === sl[0].row).length !== 2) bad.push('slippery-pair');
+  }
+  if (w.shark) {
+    const s = w.shark, r = { x0: s.cx - s.half, x1: s.cx + s.half, y0: s.y - s.ry, y1: s.y + s.ry }, clr = O.shark.clearance * FZ;
+    if (r.x0 < em - 1e-6 || r.x1 > W - em + 1e-6 || r.y0 < top || r.y1 > bottom) bad.push('shark-bounds');
+    for (const t of st) for (const p of pts(t, 240)) if (rectD(p[0], p[1], r) < clr - 0.5) { bad.push('shark-clearance'); break; }
+    if (Math.abs(s.rx * 2 - FZ) > FZ * 0.2) bad.push('shark-size');
+  }
+  if (w.shallow) {
+    const s = w.shallow, sp = pts(s);
+    if (s.x - s.rx < em - 1e-6 || s.x + s.rx > W - em + 1e-6 || s.y - s.ry < top || s.y + s.ry > bottom) bad.push('shallow-bounds');
+    for (const t of st) if (inside(s, t) || inside(t, s) || minD(sp, pts(t)) < 0.2 * FZ - 0.5) { bad.push('shallow-near-stone'); break; }
+    if (w.shark) { const r = { x0: w.shark.cx - w.shark.half, x1: w.shark.cx + w.shark.half, y0: w.shark.y - w.shark.ry, y1: w.shark.y + w.shark.ry }; for (const p of sp) if (rectD(p[0], p[1], r) < 1) { bad.push('shallow-near-shark'); break; } }
+  }
+  return bad;
 }
 
 function judgeLanding(x, y) {
   const slack = CONFIG.stone.landingSlack;
   for (const s of G.stones) {
     const dx = (x - s.x) / (s.rx * slack), dy = (y - s.y) / (s.ry * slack);
-    if (dx * dx + dy * dy <= 1) return { type: 'stone', stone: s.idx };
+    if (dx * dx + dy * dy <= 1) return { type: s.slippery ? 'slippery' : 'stone', stone: s.idx };
   }
+  const sh = G.shallow;                                      // 얕은 물: 눈에는 안 보이지만 개구리 크기의 돌로 판정
+  if (sh) { const dx = (x - sh.x) / sh.rx, dy = (y - sh.y) / sh.ry; if (dx * dx + dy * dy <= 1) return { type: 'shallow' }; }
   if (y <= CONFIG.island.goalH) return { type: 'goal' };
   if (y >= H - CONFIG.island.startH) return { type: 'start' };
   return { type: 'water' };
 }
+/* 상어는 움직이므로 착지하는 순간의 위치로 따로 판정한다 */
+function sharkHit(x, y) {
+  const s = G.shark;
+  if (!s) return false;
+  const dx = (x - s.px) / s.rx, dy = (y - s.py) / s.ry;
+  return dx * dx + dy * dy <= 1;
+}
 
 function newWorld() {
   G.seed = FIXED_SEED !== null ? FIXED_SEED : Math.floor(Math.random() * 4294967296) >>> 0;
-  G.stones = generateStones(mulberry32(G.seed));
+  const w = generateWorld(mulberry32(G.seed), G.options);
+  G.world = w; G.stones = w.stones; G.shark = w.shark; G.shallow = w.shallow;
+  G.sharkLoss = null; G.loseInfo = null;
   jumpRng = FIXED_SEED !== null ? mulberry32(G.seed ^ 0xA5A5A5A5) : Math.random;
+  initParticles();
+}
+
+/* 계절 입자 (꽃잎·반짝임·낙엽·눈) — 보기 전용 */
+function makeParticle(P, initial) {
+  const r = Math.random, between = (a) => a[0] + (a[1] - a[0]) * r();
+  const p = { f: Math.floor(r() * 4), s: between(P.size), rot: r() * TAU, ph: r() * TAU };
+  if (P.mode === 'twinkle') {
+    p.x = r() * W; p.y = CONFIG.island.goalH + 10 + r() * (H - CONFIG.island.goalH - CONFIG.island.startH - 20); p.sp = between(P.speed);
+  } else {
+    p.x = r() * W; p.y = initial ? r() * (H + 40) - 20 : -20 - r() * 40;
+    p.vy = between(P.vy); p.vx = between(P.vx); p.vr = (r() - 0.5) * 2 * P.spin;
+  }
+  return p;
+}
+function initParticles() {
+  const P = theme().particles;
+  G.particles = [];
+  if (P) for (let i = 0; i < P.count; i++) G.particles.push(makeParticle(P, true));
+}
+function updateParticles(dt) {
+  const P = theme().particles;
+  if (!P || P.mode === 'twinkle') return;
+  for (let i = 0; i < G.particles.length; i++) {
+    const p = G.particles[i];
+    p.y += p.vy * dt; p.x += p.vx * dt + Math.sin(G.time * 1.4 + p.ph) * P.sway * dt; p.rot += p.vr * dt;
+    if (p.y > H + 24 || p.x < -30 || p.x > W + 30) G.particles[i] = makeParticle(P, false);
+  }
 }
 
 /* =====================================================================
@@ -427,10 +670,14 @@ function startJump(f) {
   const e = J.ease(chargeRatio(f));
   const dist = (J.minDist + (J.maxDist - J.minDist) * e) * f.type.power;
   const ang = Math.atan2(f.aim.y, f.aim.x) + sampleAngleError(f.type.sigma);        // 점프 순간 각도 오차 적용
-  const tx = clamp(f.x + Math.cos(ang) * dist, 6, W - 6);
-  const ty = clamp(f.y + Math.sin(ang) * dist, 6, H - 6);
-  const res = judgeLanding(tx, ty);                                                  // 착지 지점은 시작 시 결정
-  const k = clamp(dist / (J.maxDist * 1.15), 0, 1);
+  launch(f, clamp(f.x + Math.cos(ang) * dist, 6, W - 6), clamp(f.y + Math.sin(ang) * dist, 6, H - 6));
+}
+
+/* 목표 지점이 정해진 점프 시작 (테스트에서 직접 부르기도 함) */
+function launch(f, tx, ty) {
+  const J = CONFIG.jump;
+  const res = judgeLanding(tx, ty);                                                  // 정적인 지형의 착지 결과는 점프 시작 시 결정
+  const k = clamp(Math.hypot(tx - f.x, ty - f.y) / (J.maxDist * 1.15), 0, 1);
   f.jump = {
     sx: f.x, sy: f.y, tx, ty, t: 0, u: 0, res,
     dur: lerp(J.durMin, J.durMax, k), height: lerp(J.heightMin, J.heightMax, k)
@@ -442,25 +689,66 @@ function startJump(f) {
 }
 
 function landFrog(f) {
-  const j = f.jump;
+  const j = f.jump, res = j.res;
   f.x = j.tx; f.y = j.ty; f.jump = null;
-  if (j.res.type === 'goal') { winGame(f); return; }
-  if (j.res.type === 'water') {
+  if (res.type === 'goal') { winGame(f); return; }
+  if (res.type === 'water') {
+    if (G.shark && !G.sharkLoss && sharkHit(f.x, f.y)) { eatFrog(f); return; }       // 상어 위에 착지 → 즉시 패배
     setFrogState(f, 'splash');
     addFx('splash', f.x, f.y, 0.8);
     addFx('ripple', f.x, f.y, 1.1);
     Sfx.splash();
     return;
   }
+  if (res.type === 'slippery') { startSlip(f, G.stones[res.stone]); return; }         // 착지는 했지만 미끄러져 빠진다
   setFrogState(f, 'land');
   addFx('dust', f.x, f.y, 0.35);
-  if (j.res.type === 'stone') { f.on = j.res.stone; G.stones[j.res.stone].bob = 1; } else f.on = -1;
+  if (res.type === 'stone') { f.on = res.stone; G.stones[res.stone].bob = 1; }
+  else if (res.type === 'shallow') { f.on = -2; revealShallow(); }
+  else f.on = -1;
   Sfx.land();
+}
+
+/* 미끄러운 돌: 착지 지점에서 돌 바깥쪽으로 미끄러져 물에 빠진다 */
+function startSlip(f, s) {
+  const O = CONFIG.options.slippery;
+  let dx = f.x - s.x, dy = f.y - s.y, dd = Math.hypot(dx, dy);
+  if (dd < 4) { dx = f.aim.x; dy = f.aim.y; dd = Math.hypot(dx, dy) || 1; }          // 정확히 중앙이면 뛰어온 방향으로
+  dx /= dd; dy /= dd;
+  let t = 0;
+  while (t < 400) { const ex = (f.x + dx * t - s.x) / s.rx, ey = (f.y + dy * t - s.y) / s.ry; if (ex * ex + ey * ey >= 1) break; t += 2; }
+  const dist = t + O.slideExtra * frogSize();
+  f.slip = { sx: f.x, sy: f.y, tx: clamp(f.x + dx * dist, 6, W - 6), ty: clamp(f.y + dy * dist, 6, H - 6), t: 0,
+             dur: clamp(dist / 190, O.slideTime[0], O.slideTime[1]) };
+  setFrogState(f, 'slip');
+  addFx('dust', f.x, f.y, 0.35);
+  s.bob = 1;
+  Sfx.slip();
+}
+
+/* 상어: 착지 순간 상어 몸 안이면 잡아먹힌다 (결과 화면은 잠시 뒤) */
+function eatFrog(f) {
+  const s = G.shark;
+  G.sharkLoss = f; f.pointerId = null;
+  s.bite = { t: 0, x: f.x, y: f.y }; s.dir = f.x >= s.px ? 1 : -1;
+  setFrogState(f, 'eaten');
+  addFx('splash', f.x, f.y, 0.8);
+  addFx('ripple', f.x, f.y, 1.1);
+  Sfx.bite();
+}
+
+/* 얕은 물: 처음 누군가 착지하면 희미한 그림자가 나타난다 */
+function revealShallow() {
+  const s = G.shallow;
+  if (!s || s.revealed) return;
+  s.revealed = true; s.revealT = 0;
+  addFx('ripple', s.x, s.y, 1.1);
+  Sfx.reveal();
 }
 
 function respawn(f) {
   const p = startPos(f.idx);
-  f.x = p.x; f.y = p.y; f.on = -1; f.aim.x = 0; f.aim.y = -1; f.facing = 0;
+  f.x = p.x; f.y = p.y; f.on = -1; f.aim.x = 0; f.aim.y = -1; f.facing = 0; f.slip = null;
   f.spawnT = CONFIG.frog.spawnTime;
   setFrogState(f, 'idle');
 }
@@ -484,22 +772,54 @@ function updateFrog(f, dt) {
     case 'land':
       if (f.stateT >= CONFIG.frog.landTime) setFrogState(f, 'idle');
       break;
+    case 'slip': {
+      const s = f.slip;
+      s.t += dt;
+      const u = Math.min(1, s.t / s.dur), e = Math.pow(u, 1.5);                   // 천천히 시작해 점점 빨라진다
+      f.x = lerp(s.sx, s.tx, e); f.y = lerp(s.sy, s.ty, e);
+      if (u >= 1) {
+        f.slip = null;
+        setFrogState(f, 'splash');
+        addFx('splash', f.x, f.y, 0.8); addFx('ripple', f.x, f.y, 1.1);
+        Sfx.splash();
+      }
+      break;
+    }
     case 'splash':
       if (f.stateT >= CONFIG.frog.splashTime) respawn(f);
       break;
-    default: break;
+    default: break;                                   // eaten: 결과 화면으로 넘어갈 때까지 숨김
   }
 }
 
-function winGame(winner) {
+function updateShark(dt) {
+  const s = G.shark;
+  if (!s) return;
+  if (s.bite) {                                       // 잡아먹는 중: 개구리 쪽으로 달려들었다가 잠시 뒤 원래 동선으로
+    s.bite.t += dt;
+    const k = Math.min(1, dt * 26);
+    s.px += (s.bite.x - s.px) * k; s.py += (s.bite.y - s.py) * k;
+    if (s.bite.t > 1.8) s.bite = null;
+  } else {
+    s.t += dt;
+    const ph = TAU * s.t / s.period + s.phase, k = Math.min(1, dt * 12);
+    s.px += (s.cx + s.swing * Math.sin(ph) - s.px) * k; s.py += (s.y - s.py) * k;
+    s.dir = Math.cos(ph) >= 0 ? 1 : -1;
+  }
+}
+
+/* info.shark: 상어에게 잡아먹혀 상대가 승리한 경우 */
+function winGame(winner, info) {
   G.winner = winner;
-  winner.y = Math.max(winner.y, 70);                  // 결승선 너머 화면 끝에 걸쳐 착지해도 승자가 잘 보이게
+  G.loseInfo = info && info.shark ? { type: 'shark', loser: info.loser } : null;
+  if (!G.loseInfo) winner.y = Math.max(winner.y, 70);  // 결승선 너머 화면 끝에 걸쳐 착지해도 승자가 잘 보이게
   setFrogState(winner, 'win');
   for (const f of G.frogs) {
     f.pointerId = null;
     if (f === winner) continue;
     f.jump = null;
-    if (f.state === 'splash') respawn(f);
+    if (f.state === 'eaten') continue;                 // 잡아먹힌 개구리는 계속 숨김
+    if (f.state === 'splash' || f.state === 'slip') respawn(f);
     setFrogState(f, 'lose');
   }
   for (let i = 0; i < 80; i++) {
@@ -579,6 +899,7 @@ function hitButton(p) {
   return null;
 }
 function pickFrog(p) {
+  if (G.sharkLoss) return null;                                 // 상어에게 잡아먹힌 뒤에는 입력 없음
   let best = null, bd = CONFIG.frog.touchRadius;
   for (const f of G.frogs) {
     if (f.pointerId !== null) continue;
@@ -671,6 +992,9 @@ function unlockScreen() { try { if (wakeLock) wakeLock.release(); } catch (e) { 
 function setState(s) { G.state = s; G.stateT = 0; }
 function goTitle() { cancelAllCharges(); unlockScreen(); G.fx.length = 0; G.confetti.length = 0; G.winner = null; newWorld(); resetFrogs(); setState('title'); }
 function goSelect() { cancelAllCharges(); unlockScreen(); G.fx.length = 0; G.confetti.length = 0; G.winner = null; newWorld(); resetFrogs(); setState('select'); }
+function goOptions() { cancelAllCharges(); unlockScreen(); G.fx.length = 0; G.confetti.length = 0; G.winner = null; newWorld(); resetFrogs(); setState('options'); }
+function setTheme(id) { if (id === G.theme) return; G.theme = id; savePrefs(); initParticles(); }
+function toggleOption(k) { G.options[k] = !G.options[k]; savePrefs(); newWorld(); resetFrogs(); }
 function startMatch() {
   newWorld();                                          // 다시 시작할 때마다 돌 배치를 새로 생성
   resetFrogs();
@@ -696,7 +1020,17 @@ function update(dt) {
   } else if (G.state === 'playing') {
     G.elapsed += dt; G.goT += dt;
   }
+  updateShark(dt);                                     // 착지 판정에 쓰이므로 개구리보다 먼저
+  updateParticles(dt);
+  if (G.shallow && G.shallow.revealed) G.shallow.revealT += dt;
   for (const f of G.frogs) updateFrog(f, dt);
+  if (G.sharkLoss && G.state === 'playing') {          // 상어에게 잡아먹힘 → 상대 승리 (상대가 점프 중이면 착지 뒤에)
+    const loser = G.sharkLoss, other = G.frogs[1 - loser.idx];
+    if (other.state !== 'jump' && loser.stateT >= CONFIG.options.shark.biteTime) {
+      if (other.state === 'splash' || other.state === 'slip') respawn(other);
+      winGame(other, { shark: true, loser });
+    }
+  }
 }
 
 /* =====================================================================
@@ -707,24 +1041,27 @@ const ripples = Array.from({ length: 30 }, () => ({
   w: 24 + Math.random() * 30, h: 8 + Math.random() * 10, speed: 0.15 + Math.random() * 0.2, phase: Math.random()
 }));
 
-function drawWater() {
-  if (drawSprite('bg_water', 0, 0)) return;
-  const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#3aa8d0'); g.addColorStop(1, '#1c6a96');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+function drawWater(tid, ambient = true) {
+  const pal = theme(tid).pal;
+  if (!drawSprite('bg_water', 0, 0, { theme: tid })) {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, pal.waterA); g.addColorStop(1, pal.waterB);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  if (!ambient) return;
+  ctx.save(); ctx.strokeStyle = `rgb(${pal.ripple})`; ctx.lineWidth = 2;   // 잔물결 (이미지 위에도 은은하게)
   for (const r of ripples) {
     const p = (G.time * r.speed + r.phase) % 1;
-    ctx.globalAlpha = (1 - p) * 0.35;
+    ctx.globalAlpha = (1 - p) * 0.22;
     ell(r.x, r.y, r.w * (0.4 + p * 0.6), r.h * (0.4 + p * 0.6)); ctx.stroke();
   }
-  ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
-function islandPlaceholder(top, bottom, edgeY, goal) {
+function islandPlaceholder(top, bottom, edgeY, goal, pal) {
   ctx.save();
   const g = ctx.createLinearGradient(0, top, 0, bottom);
-  g.addColorStop(0, goal ? '#7bd36a' : '#83c76a'); g.addColorStop(1, goal ? '#4aa04c' : '#58a44c');
+  g.addColorStop(0, pal.landA); g.addColorStop(1, pal.landB);
   ctx.fillStyle = g;
   ctx.beginPath();
   const dirOut = goal ? 1 : -1;                      // 강 쪽으로 약간 물결치는 해안선
@@ -744,27 +1081,118 @@ function islandPlaceholder(top, bottom, edgeY, goal) {
   ctx.restore();
 }
 
-function drawIslands() {
-  const gh = CONFIG.island.goalH, sh = CONFIG.island.startH;
-  if (!drawSprite('island_goal', 0, 0)) islandPlaceholder(0, gh, gh, true);
-  if (!drawSprite('island_start', 0, H - sh)) islandPlaceholder(H - sh, H, H - sh, false);
+function drawIslands(tid) {
+  const gh = CONFIG.island.goalH, sh = CONFIG.island.startH, pal = theme(tid).pal;
+  if (!drawSprite('island_goal', 0, 0, { theme: tid })) islandPlaceholder(0, gh, gh, true, pal);
+  if (!drawSprite('island_start', 0, H - sh, { theme: tid })) islandPlaceholder(H - sh, H, H - sh, false, pal);
 }
 
-function drawStone(s) {
+function stonePlaceholder(x, y, rx, ry, pal, slick, idx) {
+  ctx.save();
+  const g = ctx.createRadialGradient(x - rx * 0.3, y - ry * 0.4, 2, x, y, rx);
+  g.addColorStop(0, pal.stoneA); g.addColorStop(1, pal.stoneB);
+  ctx.fillStyle = g; ell(x, y, rx, ry); ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = pal.stoneEdge; ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ell(x - rx * 0.28, y - ry * 0.35, rx * 0.4, ry * 0.22); ctx.fill();
+  if (slick) {                                        // 미끄러운 돌: 푸른 윤기 + 이끼 줄무늬 + 반짝이는 하이라이트
+    ctx.globalAlpha = 0.5; ctx.fillStyle = pal.slick; ell(x, y, rx * 0.96, ry * 0.9); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgba(80,170,90,0.55)';
+    ell(x + rx * 0.3, y + ry * 0.25, rx * 0.3, ry * 0.13, 0.2); ctx.fill();
+    ell(x - rx * 0.35, y + ry * 0.38, rx * 0.22, ry * 0.1, -0.2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ell(x - rx * 0.2, y - ry * 0.3, rx * 0.35, ry * 0.14); ctx.fill();
+  } else {
+    ctx.fillStyle = 'rgba(88,140,70,0.45)';           // 이끼 (돌마다 고정된 모양)
+    ell(x + rx * 0.45, y + ry * 0.2, rx * 0.2, ry * 0.18, 0.4); ctx.fill();
+    ell(x + rx * (-0.5 + (idx % 3) * 0.1), y + ry * 0.35, rx * 0.14, ry * 0.12); ctx.fill();
+  }
+  ctx.restore();
+}
+
+/* 미끄러운 돌 위에서 반짝이는 하이라이트 (눈에 띄게) */
+function drawGlints(s, rx, ry) {
+  ctx.save(); ctx.strokeStyle = '#fff'; ctx.lineCap = 'round'; ctx.lineWidth = 1.6;
+  for (let i = 0; i < 2; i++) {
+    const a = Math.max(0, Math.sin(G.time * 2.2 + i * 2.1 + s.idx)), px = s.x + (i ? 0.35 : -0.3) * rx, py = s.y + (i ? 0.12 : -0.18) * ry;
+    const r = (2.5 + 4 * a) * Math.min(1, rx / 50 + 0.4);
+    ctx.globalAlpha = a * 0.95;
+    ctx.beginPath(); ctx.moveTo(px - r, py); ctx.lineTo(px + r, py); ctx.moveTo(px, py - r * 0.9); ctx.lineTo(px, py + r * 0.9); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawStone(s, tid, preview) {
   const vs = CONFIG.stone.visualScale;
   const bob = s.bob > 0 ? 1 - Math.sin((1 - s.bob) * Math.PI) * 0.07 : 1;
   const rx = s.rx * vs * bob, ry = s.ry * vs * bob;
-  if (drawSprite('stone', s.x, s.y, { w: rx * 2, h: ry * 2 })) return;
+  ctx.save(); ctx.fillStyle = 'rgba(0,40,60,0.24)'; ell(s.x + 3, s.y + 6, rx, ry); ctx.fill(); ctx.restore();   // 그림자는 항상 코드로
+  if (!drawSprite(s.slippery ? 'stone_slippery' : 'stone', s.x, s.y, { w: rx * 2, h: ry * 2, theme: tid })) {
+    stonePlaceholder(s.x, s.y, rx, ry, theme(tid).pal, s.slippery, s.idx || 0);
+  }
+  if (s.slippery && !preview) drawGlints(s, rx, ry);
+}
+
+/* 얕은 물: 첫 접촉 뒤에만 희미한 그림자가 보인다 (그 전에는 아무것도 그리지 않음) */
+function drawShallow() {
+  const s = G.shallow;
+  if (!s || !s.revealed) return;
+  const a = clamp(s.revealT / CONFIG.options.shallow.revealTime, 0, 1);
+  if (drawSprite('fx_shallow', s.x, s.y, { w: s.rx * 2 * 1.3, h: s.ry * 2 * 1.3, alpha: a })) return;
   ctx.save();
-  ctx.fillStyle = 'rgba(0,40,60,0.28)'; ell(s.x + 3, s.y + 7, rx * 1.02, ry * 1.02); ctx.fill();
-  const g = ctx.createRadialGradient(s.x - rx * 0.3, s.y - ry * 0.4, 2, s.x, s.y, rx);
-  g.addColorStop(0, '#d2cdbf'); g.addColorStop(1, '#8f8a7c');
-  ctx.fillStyle = g; ell(s.x, s.y, rx, ry); ctx.fill();
-  ctx.lineWidth = 3; ctx.strokeStyle = '#6a665b'; ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ell(s.x - rx * 0.28, s.y - ry * 0.35, rx * 0.4, ry * 0.22); ctx.fill();
-  ctx.fillStyle = 'rgba(88,140,70,0.45)';             // 이끼 (돌마다 고정된 모양)
-  ell(s.x + rx * 0.45, s.y + ry * 0.2, rx * 0.2, ry * 0.18, 0.4); ctx.fill();
-  ell(s.x + rx * (-0.5 + (s.idx % 3) * 0.1), s.y + ry * 0.35, rx * 0.14, ry * 0.12); ctx.fill();
+  ctx.globalAlpha = a * 0.3; ctx.fillStyle = '#04283a'; ell(s.x, s.y, s.rx * 1.1, s.ry * 1.1); ctx.fill();
+  ctx.globalAlpha = a * 0.35; ctx.strokeStyle = `rgb(${theme().pal.ripple})`; ctx.lineWidth = 2; ell(s.x, s.y, s.rx * 1.25, s.ry * 1.25); ctx.stroke();
+  ctx.restore();
+}
+
+function sharkPlaceholder(s, pulse) {
+  const L = s.rx * 1.3 * pulse, B = s.ry * 1.05 * pulse, wob = Math.sin(G.time * 9) * B * 0.35;
+  ctx.save(); ctx.translate(s.px, s.py); ctx.scale(s.dir, 1); ctx.globalAlpha = 0.95;
+  const g = ctx.createLinearGradient(0, -B, 0, B); g.addColorStop(0, '#53667a'); g.addColorStop(1, '#8aa0b2');
+  ctx.fillStyle = g; ctx.strokeStyle = '#2f3f50'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(L, 0);
+  ctx.bezierCurveTo(L * 0.5, -B, -L * 0.4, -B * 0.8, -L * 0.8, -B * 0.12 + wob * 0.3);
+  ctx.lineTo(-L * 1.15, -B * 0.85 + wob); ctx.lineTo(-L * 0.98, wob * 0.5); ctx.lineTo(-L * 1.15, B * 0.85 + wob); ctx.lineTo(-L * 0.8, B * 0.12 + wob * 0.3);
+  ctx.bezierCurveTo(-L * 0.4, B * 0.8, L * 0.5, B, L, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#3d4f61';
+  for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(L * 0.3, sd * B * 0.55); ctx.lineTo(-L * 0.05, sd * B * 1.35); ctx.lineTo(-L * 0.15, sd * B * 0.55); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(L * 0.2, 0); ctx.lineTo(-L * 0.3, -B * 0.2); ctx.lineTo(-L * 0.5, 0); ctx.lineTo(-L * 0.3, B * 0.2); ctx.closePath(); ctx.fill(); ctx.stroke();   // 등지느러미
+  ctx.fillStyle = '#10202c';
+  for (const sd of [-1, 1]) { ctx.beginPath(); ctx.arc(L * 0.68, sd * B * 0.38, 2, 0, TAU); ctx.fill(); }
+  ctx.restore();
+}
+
+function drawShark() {
+  const s = G.shark;
+  if (!s) return;
+  const pulse = s.bite ? 1 + 0.3 * Math.sin(Math.min(1, s.bite.t / 0.4) * Math.PI) : 1;   // 잡아먹을 때 확 커졌다 줄어든다
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2;               // 헤엄칠 때 생기는 물결
+  for (let i = 0; i < 2; i++) {
+    const k = (G.time * 0.9 + i * 0.5) % 1;
+    ctx.globalAlpha = (1 - k) * 0.4;
+    ell(s.px - s.dir * (s.rx * 0.9 + k * 14), s.py + 2, s.rx * (0.8 + k * 0.7), s.ry * (0.7 + k * 0.6)); ctx.stroke();
+  }
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha = 0.16; ctx.fillStyle = '#031a28'; ell(s.px + 2, s.py + 6, s.rx * 1.15 * pulse, s.ry * 1.1 * pulse); ctx.fill(); ctx.restore();   // 물속 그림자(눈에 잘 띄도록)
+  const w = s.rx * 2 * 1.3 * pulse;
+  if (!drawSprite('shark', s.px, s.py, { w, h: w / 2, sx: s.dir, alpha: 0.96 })) sharkPlaceholder(s, pulse);
+}
+
+/* 계절 입자: 'twinkle'(반짝임)은 물 위, 'fall'(꽃잎·낙엽·눈)은 개구리 위에 그린다 */
+function drawParticles(mode) {
+  const t = theme(), P = t.particles;
+  if (!P || P.mode !== mode) return;
+  ctx.save();
+  for (const p of G.particles) {
+    let a = P.alpha || 1;
+    if (mode === 'twinkle') a *= Math.pow(Math.max(0, Math.sin(G.time * p.sp + p.ph)), 2);
+    if (a <= 0.02) continue;
+    if (drawSprite('fx_season', p.x, p.y, { frame: p.f, w: p.s, h: p.s, rot: p.rot, alpha: a })) continue;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.globalAlpha = a; ctx.fillStyle = t.pal.pc[p.f % t.pal.pc.length];
+    if (mode === 'twinkle') {
+      ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-p.s * 0.4, 0); ctx.lineTo(p.s * 0.4, 0); ctx.moveTo(0, -p.s * 0.4); ctx.lineTo(0, p.s * 0.4); ctx.stroke();
+    } else { ell(0, 0, p.s * 0.5, p.s * 0.28); ctx.fill(); }
+    ctx.restore();
+  }
   ctx.restore();
 }
 
@@ -818,7 +1246,7 @@ function drawFrogVisual(type, state, x, y, o = {}) {
     drawSprite(useKey, x, y, { rot, sx, sy, t: o.t });
   } else {
     ctx.translate(x, y); ctx.rotate(o.rot || 0);
-    drawFrogBody(type, state, sx, sy);
+    drawFrogBody(type, state === 'slip' ? 'jump' : state, sx, sy);
   }
   ctx.restore();
 }
@@ -844,7 +1272,7 @@ function drawBadge(f, x, y) {
 
 function drawFrog(f) {
   const R = CONFIG.frog.radius;
-  if (f.state === 'splash') return;                                  // 물속으로 잠김 (물보라는 fx로 표현)
+  if (f.state === 'splash' || f.state === 'eaten') return;           // 물속으로 잠김 / 상어에게 잡아먹힘 (이펙트는 fx로 표현)
   let gx = f.x, gy = f.y, h = 0, scale = 1, sx = 1, sy = 1, alpha = 1, rot = f.facing;
   if (f.spawnT > 0) alpha = 1 - f.spawnT / CONFIG.frog.spawnTime * 0.8;
   switch (f.state) {
@@ -853,6 +1281,7 @@ function drawFrog(f) {
     case 'jump': { const u = f.jump.u, arc = 4 * u * (1 - u); h = f.jump.height * arc; scale = 1 + 0.3 * arc; sx = 0.92; sy = 1.12; break; }
     case 'land': { const k = 1 - f.stateT / CONFIG.frog.landTime; sx = 1 + 0.2 * k; sy = 1 - 0.16 * k; break; }
     case 'win': h = Math.abs(Math.sin(f.stateT * 7)) * 16; rot = Math.sin(f.stateT * 5) * 0.25; break;
+    case 'slip': { const u = clamp(f.slip.t / f.slip.dur, 0, 1); rot = f.facing + u * TAU * 0.75; scale = 1 - 0.22 * u; alpha = 1 - 0.3 * u * u; break; }   // 빙글 돌며 미끄러진다
     case 'lose': alpha = 0.85; rot = f.facing + 0.35; sy = 0.92; break;
     default: break;
   }
@@ -900,18 +1329,24 @@ function drawChargeUI(f) {
 function drawWorld() {
   drawWater();
   drawIslands();
+  drawParticles('twinkle');
   if (DEBUG) text(`seed ${G.seed}`, 8, H - 14, { size: 14, align: 'left', alpha: 0.8 });
   else if (FIXED_SEED !== null) text(`seed ${G.seed}`, 8, H - 14, { size: 14, align: 'left', alpha: 0.5 });
+  drawShallow();
   for (const s of G.stones) drawStone(s);
+  drawShark();
   for (const e of G.fx) if (e.type === 'ripple') drawFx(e);
   const order = G.frogs.slice().sort((a, b) => (a.state === 'jump') - (b.state === 'jump') || a.y - b.y);
   for (const f of order) drawFrog(f);
+  drawParticles('fall');
   for (const e of G.fx) if (e.type !== 'ripple') drawFx(e);
   for (const f of G.frogs) if (f.state === 'charge') drawChargeUI(f);
-  if (DEBUG) {
+  if (DEBUG) {                                          // 판정 영역 표시: 노랑=돌, 하늘=개구리 터치, 빨강=상어, 초록=얕은 물(숨겨진 것도 표시)
     ctx.save(); ctx.lineWidth = 1.5;
     ctx.strokeStyle = '#ff0'; for (const s of G.stones) { ell(s.x, s.y, s.rx * CONFIG.stone.landingSlack, s.ry * CONFIG.stone.landingSlack); ctx.stroke(); }
     ctx.strokeStyle = '#0ff'; for (const f of G.frogs) { ctx.beginPath(); ctx.arc(f.x, f.y, CONFIG.frog.touchRadius, 0, TAU); ctx.stroke(); }
+    if (G.shark) { ctx.strokeStyle = '#f44'; ell(G.shark.px, G.shark.py, G.shark.rx, G.shark.ry); ctx.stroke(); ctx.strokeRect(G.shark.cx - G.shark.half, G.shark.y - G.shark.ry, G.shark.half * 2, G.shark.ry * 2); }
+    if (G.shallow) { ctx.strokeStyle = '#4f4'; ell(G.shallow.x, G.shallow.y, G.shallow.rx, G.shallow.ry); ctx.stroke(); }
     ctx.restore();
   }
 }
@@ -1028,6 +1463,97 @@ function renderSelect() {
     text(t.desc, 270, y0 + 304, { size: 20, color: '#cfe8f5', maxW: 460 });
   }
   button({ id: 'back', x: 130, y: 872, w: 190, h: 66, label: '뒤로', size: 28, variant: 'sub', onClick: goTitle });
+  button({ id: 'go', x: 385, y: 872, w: 250, h: 80, label: '다음', size: 38, onClick: goOptions });
+}
+
+/* ---- 게임 설정: 맵 테마 + 위험 요소(옵션) 토글 ---- */
+function drawThemePreview(tid, x, y, w, h) {                  // 테마의 실제 이미지를 축소해 보여주는 미리보기 카드
+  ctx.save();
+  rrect(x, y, w, h, 14); ctx.clip();
+  ctx.translate(x, y); ctx.scale(w / W, h / H);
+  drawWater(tid, false); drawIslands(tid);
+  [[190, 700, 113, 40], [340, 570, 96, 34], [230, 440, 82, 29], [330, 330, 70, 25], [270, 225, 59, 21]]
+    .forEach((e, i) => drawStone({ x: e[0], y: e[1], rx: e[2], ry: e[3], bob: 0, slippery: false, idx: i }, tid, true));
+  ctx.restore();
+}
+
+function drawThemeIcon(t, x, y, size) {
+  if (drawSprite('ui_theme_icon', x, y, { theme: t.id, w: size, h: size })) return;
+  ctx.save(); ctx.fillStyle = t.pal.landA; ctx.strokeStyle = t.pal.stoneEdge; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y, size / 2, 0, TAU); ctx.fill(); ctx.stroke(); ctx.restore();
+}
+
+function drawSwitch(x, y, on) {
+  if (drawSprite(on ? 'ui_toggle_on' : 'ui_toggle_off', x, y)) return;
+  ctx.save();
+  ctx.fillStyle = on ? '#4cc65a' : '#5b6b78'; rrect(x - 39, y - 20, 78, 40, 20); ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(on ? x + 19 : x - 19, y, 15, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+
+function drawOptIcon(k, x, y) {
+  if (drawSprite('icon_opt_' + k, x, y)) return;
+  ctx.save(); ctx.translate(x, y); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (k === 'shark') {
+    ctx.fillStyle = '#8196a9'; ctx.strokeStyle = '#2f3f50'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(-14, 8); ctx.lineTo(-2, -16); ctx.lineTo(4, -2); ctx.lineTo(16, 8); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#bfe7ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-20, 12); ctx.quadraticCurveTo(-10, 6, 0, 12); ctx.quadraticCurveTo(10, 18, 20, 12); ctx.stroke();
+  } else if (k === 'slippery') {
+    ctx.fillStyle = '#c9c4b6'; ell(0, 4, 19, 11); ctx.fill(); ctx.strokeStyle = '#6a665b'; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.fillStyle = 'rgba(150,215,255,0.65)'; ell(0, 4, 16, 8); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(8, -16); ctx.lineTo(8, -6); ctx.moveTo(3, -11); ctx.lineTo(13, -11); ctx.stroke();
+  } else {
+    ctx.strokeStyle = '#bfe7ff'; ctx.lineWidth = 3; ell(0, 2, 18, 11); ctx.stroke();
+    ctx.globalAlpha = 0.6; ell(0, 2, 9, 5); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function renderOptions() {
+  dim(0.84);
+  text('게임 설정', 270, 58, { size: 46, color: '#b9f26b', stroke: '#14532d' });
+  // 맵 테마
+  panel(270, 240, 504, 280);
+  text('맵 테마', 40, 126, { size: 26, align: 'left' });
+  const n = CONFIG.themes.length, cw = Math.min(108, Math.floor((468 - 12 * (n - 1)) / n)), ch = Math.round(cw * H / W), gap = n > 1 ? (468 - n * cw) / (n - 1) : 0;
+  CONFIG.themes.forEach((t, i) => {
+    const x0 = 36 + i * (cw + gap), y0 = 146, on = t.id === G.theme;
+    button({ id: `theme_${t.id}`, x: x0 + cw / 2, y: y0 + (ch + 44) / 2, w: cw + 4, h: ch + 44, custom: true, onClick: () => setTheme(t.id) });
+    drawThemePreview(t.id, x0, y0, cw, ch);
+    ctx.save();
+    if (!on) { ctx.fillStyle = 'rgba(3,20,30,0.38)'; rrect(x0, y0, cw, ch, 14); ctx.fill(); }
+    ctx.lineWidth = on ? 5 : 2; ctx.strokeStyle = on ? '#ffe066' : 'rgba(255,255,255,0.35)'; rrect(x0, y0, cw, ch, 14); ctx.stroke();
+    ctx.restore();
+    drawThemeIcon(t, x0 + 24, y0 + 24, 36);
+    text(t.name, x0 + cw / 2, y0 + ch + 22, { size: 26, color: on ? '#ffe066' : '#fff' });
+  });
+  // 위험 요소 토글
+  panel(270, 596, 504, 400);
+  text('위험 요소', 40, 420, { size: 26, align: 'left' });
+  text('켜고 끌 수 있어요', 500, 420, { size: 18, align: 'right', color: '#cfe8f5' });
+  const rows = [
+    { k: 'shark', name: '상어', d: ['위쪽 물속을 헤엄쳐요', '닿으면 즉시 패배!'] },
+    { k: 'slippery', name: '미끄러운 돌', d: ['위쪽 돌 하나가 쌍둥이,', '한쪽은 미끄러워요'] },
+    { k: 'shallow', name: '얕은 물', d: ['눈에 안 보이는 얕은 곳이', '위쪽 어딘가에 숨어 있어요'] }
+  ];
+  rows.forEach((r, i) => {
+    const y = 482 + i * 100, on = G.options[r.k];
+    button({ id: `opt_${r.k}`, x: 270, y, w: 480, h: 92, custom: true, onClick: () => toggleOption(r.k) });
+    ctx.save();
+    ctx.fillStyle = on ? 'rgba(90,200,100,0.16)' : 'rgba(255,255,255,0.06)'; rrect(30, y - 46, 480, 92, 18); ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = on ? 'rgba(130,230,130,0.8)' : 'rgba(255,255,255,0.25)'; ctx.stroke();
+    ctx.fillStyle = 'rgba(0,30,45,0.55)'; ctx.beginPath(); ctx.arc(84, y, 30, 0, TAU); ctx.fill();
+    ctx.restore();
+    drawOptIcon(r.k, 84, y);
+    text(r.name, 130, y - 25, { size: 28, align: 'left', color: on ? '#ffe066' : '#fff' });
+    text(r.d[0], 130, y + 4, { size: 18, align: 'left', color: '#cfe8f5' });
+    text(r.d[1], 130, y + 27, { size: 18, align: 'left', color: '#cfe8f5' });
+    drawSwitch(452, y - 6, on);
+    text(on ? '켜짐' : '꺼짐', 452, y + 24, { size: 15, color: on ? '#9be85f' : '#9fb2c0', stroke: false });
+  });
+  text('켜진 요소는 위쪽 절반의 서로 다른 줄에 하나씩 나와요', 270, 762, { size: 18, color: '#cfe8f5', maxW: 470 });
+  button({ id: 'back', x: 130, y: 872, w: 190, h: 66, label: '뒤로', size: 28, variant: 'sub', onClick: goSelect });
   button({ id: 'go', x: 385, y: 872, w: 250, h: 80, label: '시작!', size: 38, onClick: startMatch });
 }
 
@@ -1069,16 +1595,21 @@ function renderResult() {
   if (a <= 0) return;
   const w = G.winner, pcol = CONFIG.players[w.idx].color;
   ctx.save(); ctx.globalAlpha = a;
-  panel(270, 560, 440, 540);
-  text(`${CONFIG.players[w.idx].label} 승리!`, 270, 350, { size: 66, color: pcol, strokeW: 12, stroke: '#fff' });
-  drawFrogVisual(w.type, 'win', 270, 452, { scale: 1.7 / FS, rot: Math.sin(G.time * 5) * 0.2 });
-  text(`${w.type.name} (${w.type.concept})`, 270, 515, { size: 30, color: '#ffe066' });
-  text(`기록 ${G.elapsed.toFixed(1)}초`, 270, 556, { size: 26 });
+  panel(270, 570, 440, 600);
+  text(`${CONFIG.players[w.idx].label} 승리!`, 270, 335, { size: 66, color: pcol, strokeW: 12, stroke: '#fff' });
+  drawFrogVisual(w.type, 'win', 270, 440, { scale: 1.7 / FS, rot: Math.sin(G.time * 5) * 0.2 });
+  text(`${w.type.name} (${w.type.concept})`, 270, 508, { size: 30, color: '#ffe066' });
+  text(`기록 ${G.elapsed.toFixed(1)}초`, 270, 548, { size: 26 });
+  if (G.loseInfo) {                                    // 상어에게 잡아먹혀서 이긴 경우
+    const l = G.loseInfo.loser;
+    text(`${CONFIG.players[l.idx].label}${l.idx === 0 ? '이' : '가'} 상어에게 잡아먹혔어요!`, 270, 588, { size: 24, color: '#ff9c9c', maxW: 400 });
+  }
   ctx.restore();
   if (a >= 0.6) {
-    button({ id: 'again', x: 270, y: 635, w: 320, h: 80, label: '다시하기', size: 34, onClick: startMatch });
-    button({ id: 'reselect', x: 270, y: 725, w: 320, h: 68, label: '개구리 다시 고르기', size: 26, variant: 'sub', onClick: goSelect });
-    button({ id: 'home', x: 270, y: 805, w: 220, h: 56, label: '타이틀로', size: 24, variant: 'sub', onClick: goTitle });
+    button({ id: 'again', x: 270, y: 650, w: 320, h: 80, label: '다시하기', size: 34, onClick: startMatch });
+    button({ id: 'reselect', x: 190, y: 738, w: 156, h: 64, label: '개구리 고르기', size: 21, variant: 'sub', onClick: goSelect });
+    button({ id: 'resettings', x: 350, y: 738, w: 156, h: 64, label: '설정 바꾸기', size: 21, variant: 'sub', onClick: goOptions });
+    button({ id: 'home', x: 270, y: 820, w: 220, h: 56, label: '타이틀로', size: 24, variant: 'sub', onClick: goTitle });
   }
 }
 
@@ -1089,6 +1620,7 @@ function render() {
   switch (G.state) {
     case 'title': renderTitle(); break;
     case 'select': renderSelect(); break;
+    case 'options': renderOptions(); break;
     case 'countdown': renderCountdown(); break;
     case 'playing': renderPlaying(); break;
     case 'paused': renderPlaying(); renderPaused(); break;
@@ -1140,7 +1672,7 @@ resetFrogs();
 resize();
 Sprites.load();
 requestAnimationFrame(frame);
-window.__frog = { G, CONFIG, ASSETS, newWorld };   // 디버깅용 훅 (콘솔에서 __frog.G 로 상태 확인)
+window.__frog = { G, CONFIG, ASSETS, THEME_ASSETS, newWorld, generateWorld, validateWorld, judgeLanding, sharkHit, launch, setTheme, toggleOption, goOptions, startMatch };   // 디버깅용 훅 (콘솔에서 __frog.G 로 상태 확인)
 
 /* =====================================================================
  * 확장 가이드

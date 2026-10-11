@@ -3,7 +3,7 @@
  * - 페이지(index.html): 네트워크 우선(3초 제한) → 실패하면 캐시 (업데이트가 바로 반영됨)
  * - 그 외 같은 출처 파일(assets/ 스프라이트 등): 캐시 먼저 보여주고 뒤에서 갱신(stale-while-revalidate)
  * 새 버전을 배포할 때는 아래 VERSION 값을 올리세요. */
-const VERSION = 'v1.0.2';
+const VERSION = 'v1.1.0';
 const CACHE = 'frog-jump-' + VERSION;
 const PRECACHE = [
   './',
@@ -16,9 +16,18 @@ const PRECACHE = [
   './icons/favicon-32.png'
 ];
 
+/* 계절 테마·상어 이미지: 설치할 때 함께 받아 두면 오프라인에서도 모든 테마가 보입니다.
+ * (하나라도 없어도 설치가 실패하지 않도록 개별로 시도합니다. 새 테마를 추가했다면 여기에도 적어 주세요 —
+ *  적지 않아도 한 번 실행하면 런타임 캐시에 저장됩니다.) */
+const THEMES = ['spring', 'summer', 'autumn', 'winter'];
+const THEME_FILES = ['water.webp', 'island_start.webp', 'island_goal.webp', 'stone.png', 'stone_slippery.png', 'shallow.png', 'particles.png', 'icon.png'];
+const ASSET_PRECACHE = ['./assets/shark.png'].concat(THEMES.flatMap((t) => THEME_FILES.map((f) => './assets/themes/' + t + '/' + f)));
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting())
+    caches.open(CACHE)
+      .then((c) => c.addAll(PRECACHE).then(() => Promise.allSettled(ASSET_PRECACHE.map((u) => c.add(u)))))
+      .then(() => self.skipWaiting())
   );
 });
 
