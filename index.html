@@ -55,6 +55,7 @@ const CONFIG = {
   },
   jump: {
     minDist: 40, maxDist: 225,                       // 논리 px (최대 거리는 기존 300의 75%)
+    holdFull: 2,                                     // 가득 찬 뒤 그대로 유지하는 시간(초) — 이후 같은 속도로 줄어들고, 0이 되면 다시 차오름
     maxCharge: 1.25,                                 // 게이지가 가득 차는 시간(초) — 차오르는 속도 0.8배 (1.0초 → 1.25초)
     ease: (t) => t * t * (3 - 2 * t),                // 누른 시간 → 거리 비율 곡선
     durMin: 0.40, durMax: 0.60,                      // 점프 체공 시간
@@ -68,7 +69,8 @@ const CONFIG = {
     deadzone: 6,                                     // 중심과 너무 가까운 터치는 방향 무시
     startXs: [0.30, 0.70],                           // P1/P2 출발 위치 (가로 비율)
     startYRatio: 0.3,                                // 출발 섬 안에서의 세로 위치 (작을수록 위쪽 → 화면 아래쪽에 여유)
-    landRadius: 0.5,                                 // 착지 판정 원 반지름 (개구리 반지름 × 0.5). 이 원이 돌·상어·얕은 물과 닿으면 닿은 것으로 판정
+    landRadius: 0.3,                                 // 착지 판정 원 반지름 (개구리 반지름 × 0.3). 이 원이 돌·상어·얕은 물과 닿으면 닿은 것으로 판정
+    goalCover: 0.5,                                  // 결승선: 개구리 몸의 이 비율 이상이 도착 섬 안에 들어와야 승리 (0.5 = 중심이 선 위)
     landTime: 0.18, splashTime: 0.95, spawnTime: 0.35
   },
   game: { countdownStep: 0.8, goShow: 0.7, resultPanelDelay: 0.9 },
@@ -610,7 +612,7 @@ function judgeLanding(x, y) {
   if (best) return best;
   const sh = G.shallow;                                      // 얕은 물: 눈에는 안 보이지만 큰 돌처럼 판정
   if (sh) { const dx = (x - sh.x) / (sh.rx + lr), dy = (y - sh.y) / (sh.ry + lr); if (dx * dx + dy * dy <= 1) return { type: 'shallow' }; }
-  if (y - lr <= CONFIG.island.goalH) return { type: 'goal' };
+  if (y <= CONFIG.island.goalH + CONFIG.frog.radius * (1 - 2 * CONFIG.frog.goalCover)) return { type: 'goal' };   // 결승선은 몸의 절반 이상이 들어와야
   if (y + lr >= H - CONFIG.island.startH) return { type: 'start' };
   return { type: 'water' };
 }
@@ -679,7 +681,11 @@ function makeFrog(i, typeIdx) {
 }
 function resetFrogs() { G.frogs = [makeFrog(0, G.selection[0]), makeFrog(1, G.selection[1])]; }
 function setFrogState(f, s) { f.state = s; f.stateT = 0; }
-const chargeRatio = (f) => clamp(f.chargeT / CONFIG.jump.maxCharge, 0, 1);
+/* 게이지: 차오름(maxCharge초) → 가득 찬 채 유지(holdFull초) → 같은 속도로 줄어듦 → 0에서 다시 차오름 */
+function chargeRatio(f) {
+  const J = CONFIG.jump, up = J.maxCharge, hold = J.holdFull, t = f.chargeT % (2 * up + hold);
+  return t < up ? t / up : t < up + hold ? 1 : 1 - (t - up - hold) / up;
+}
 
 function updateAim(f) {
   const dx = f.x - f.press.x, dy = f.y - f.press.y, d = Math.hypot(dx, dy);
