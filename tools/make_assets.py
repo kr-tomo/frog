@@ -665,106 +665,72 @@ def paint_icon(tid, th):
 # shark
 # ----------------------------------------------------------------------------
 def shark_frame(i):
+    """물 밖으로 입을 벌린 머리만 내민 상어 (오른쪽을 봄). 4프레임: 턱이 벌어졌다 닫히며 살짝 출렁인다."""
     SS = 4
     W, H = 256 * SS, 128 * SS
     ph = 2 * math.pi * i / 4
-    nose_x, cy, L = 245 * SS, 64 * SS, 184 * SS
-    n = 90
-    ts = np.linspace(0, 1, n)
-    cxs = nose_x - ts * L
-    cys = cy + (1.5 + 13.5 * ts ** 1.7) * SS * np.sin(ph - 3.4 * ts)
-    tan = np.stack([np.gradient(cxs), np.gradient(cys)], 1)
-    tan /= np.linalg.norm(tan, axis=1, keepdims=True)
-    nor = np.stack([-tan[:, 1], tan[:, 0]], 1)
-    f = np.clip(ts / 0.30, 0, 1) ** 0.5
-    f = f * (1 - 0.82 * smooth(ts, 0.42, 1.0))
-    hw = 17.5 * SS * f
+    openv = 22 + 10 * math.sin(ph)            # 턱 벌어짐 (px)
+    bob = 2.0 * math.sin(ph + 1.2)
+    wl = (106 + bob) * SS                     # 수면 높이
+    S = lambda pts: [(x * SS, (y + bob) * SS) for x, y in pts]
+    img = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
 
-    def edge(k):
-        return [(cxs[j] + nor[j, 0] * hw[j] * k, cys[j] + nor[j, 1] * hw[j] * k) for j in range(n)]
-
-    def at(t):
-        j = int(round(t * (n - 1)))
-        return np.array([cxs[j], cys[j]]), tan[j], nor[j], hw[j]
-
-    body = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-    d = ImageDraw.Draw(body)
-    finc, fina = (64, 88, 112, 255), (88, 114, 138, 255)
-
-    # tail fin
-    p, tg, nr, _ = at(0.99)
-    back = -tg
-    lat = np.array([-back[1], back[0]])
-    fin = [(0, -3.5), (12, -8), (38, -27), (29, -7), (24, 0), (31, 9), (23, 22), (11, 9), (0, 3.5)]
-    pts = [tuple(p + back * x * SS + lat * y * SS) for x, y in fin]
-    d.polygon(pts, fill=finc)
-    # pectoral fins
-    p, tg, nr, h = at(0.30)
-    for sg in (-1, 1):
-        base1 = p + nr * sg * h * 0.7
-        tipp = p - tg * 30 * SS + nr * sg * (h + 29 * SS)
-        base2 = p - tg * 26 * SS + nr * sg * h * 0.6
-        d.polygon([tuple(base1 + tg * 6 * SS), tuple(tipp), tuple(base2)], fill=fina)
-        d.polygon([tuple(base1 + tg * 4 * SS), tuple(tipp), tuple(base1 - tg * 8 * SS)], fill=finc)
-    # small pelvic fins
-    p, tg, nr, h = at(0.60)
-    for sg in (-1, 1):
-        d.polygon([tuple(p + nr * sg * h * 0.7), tuple(p - tg * 14 * SS + nr * sg * (h + 9 * SS)),
-                   tuple(p - tg * 14 * SS + nr * sg * h * 0.5)], fill=finc)
-    # body
-    full = edge(1) + edge(-1)[::-1]
-    d.polygon(full, fill=(150, 178, 198, 255))
-    back_l = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-    bd = ImageDraw.Draw(back_l)
-    bd.polygon(edge(0.74) + edge(-0.74)[::-1], fill=(84, 112, 138, 255))
-    back_l = back_l.filter(ImageFilter.GaussianBlur(3.2 * SS))
-    mask_l = Image.new('L', (W, H), 0)
-    ImageDraw.Draw(mask_l).polygon(full, fill=255)
-    back_l.putalpha(ImageChopsMin(back_l.getchannel('A'), mask_l))
-    body = Image.alpha_composite(body, back_l)
-    spine = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-    sd = ImageDraw.Draw(spine)
-    sd.polygon(edge(0.38) + edge(-0.38)[::-1], fill=(60, 84, 110, 255))
-    spine = spine.filter(ImageFilter.GaussianBlur(3 * SS))
-    spine.putalpha(ImageChopsMin(spine.getchannel('A'), mask_l))
-    body = Image.alpha_composite(body, spine)
-    d = ImageDraw.Draw(body)
-    # dorsal fin
-    p0, tg, nr, h = at(0.40)
-    p1, _, _, _ = at(0.54)
-    p2, _, nr2, _ = at(0.58)
-    tip = p2 + nr2 * 3.5 * SS
-    d.polygon([tuple(p0 + nr * 4 * SS), tuple(tip), tuple(p1 - nr * 4 * SS), tuple(p0 - nr * 3 * SS)],
-              fill=(38, 58, 82, 255))
-    d.line([tuple(p0), tuple(tip)], fill=(110, 138, 162, 255), width=SS)
-    p3, _, nr3, _ = at(0.80)
-    d.polygon(ell(p3[0], p3[1], 7 * SS, 2.2 * SS, math.atan2(tan[int(0.8 * (n - 1)), 1], tan[int(0.8 * (n - 1)), 0])),
-              fill=(46, 68, 92, 255))
-    # gills
-    p, tg, nr, h = at(0.215)
-    for sg in (-1, 1):
-        for k in range(3):
-            q = p + nr * sg * h * 0.62 - tg * k * 4.2 * SS
-            d.line([tuple(q), tuple(q - tg * 3 * SS + nr * sg * 4 * SS)], fill=(44, 64, 88, 255), width=int(1.3 * SS))
-    # eyes
-    p, tg, nr, h = at(0.115)
-    for sg in (-1, 1):
-        e = p + nr * sg * h * 0.62
-        circle(d, e[0], e[1], 3.9 * SS, (22, 30, 44, 255))
-        circle(d, e[0] + 1.2 * SS, e[1] - 1.2 * SS, 1.3 * SS, (255, 255, 255, 255))
-        d.line([tuple(e + tg * 1.5 * SS - nr * sg * 3.2 * SS), tuple(e - tg * 5.5 * SS + nr * sg * 2.4 * SS)],
-               fill=(30, 44, 64, 255), width=int(1.5 * SS))
-    # nostrils and tooth hint
-    p, tg, nr, h = at(0.015)
-    for sg in (-1, 1):
-        q = p + nr * sg * 2.6 * SS - tg * 2 * SS
-        circle(d, q[0], q[1], 0.9 * SS, (50, 70, 94, 255))
-    p, tg, nr, h = at(0.08)
-    # soft edges + underwater translucency
-    body = body.filter(ImageFilter.GaussianBlur(0.55 * SS))
-    a = body.getchannel('A').point(lambda v: int(v * 0.93))
-    body.putalpha(a)
-    return lanczos(body, (256, 128))
+    # 머리 윗부분(등~주둥이~윗턱 아랫선)
+    top = chaikin(S([(52, 120), (66, 70), (96, 40), (140, 33), (186, 44), (222, 62), (232, 72), (206, 76),
+                     (176, 74), (146, 80), (118, 84), (96, 112)]), 3)
+    d.polygon(top, fill=(112, 138, 160, 255))
+    # 등 쪽 어두운 음영
+    sh = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(sh).polygon(chaikin(S([(60, 80), (80, 50), (120, 36), (170, 40), (210, 58), (150, 54), (100, 66)]), 3),
+                               fill=(64, 88, 112, 255))
+    sh = sh.filter(ImageFilter.GaussianBlur(4 * SS))
+    m = Image.new('L', (W, H), 0); ImageDraw.Draw(m).polygon(top, fill=255)
+    sh.putalpha(ImageChopsMin(sh.getchannel('A'), m)); img = Image.alpha_composite(img, sh)
+    # 입 안쪽(붉은색)
+    d = ImageDraw.Draw(img)
+    jaw_tip = (214, 78 + openv)
+    mouth = chaikin(S([(110, 86), (150, 82), (206, 78), jaw_tip, (170, 92 + openv * 0.6), (126, 100 + openv * 0.3)]), 2)
+    d.polygon(mouth, fill=(150, 40, 52, 255))
+    # 아랫턱
+    low = chaikin(S([(104, 100), (126, 100 + openv * 0.3), (170, 92 + openv * 0.6), jaw_tip, (210, 84 + openv),
+                     (190, 108 + openv), (140, 118 + openv * 0.4), (100, 122)]), 3)
+    d.polygon(low, fill=(176, 198, 214, 255))
+    # 이빨(윗니·아랫니)
+    for k in range(6):
+        x = 150 + k * 11; y0 = 78 - (x - 150) * 0.03
+        d.polygon(S([(x, y0 + 1), (x + 8, y0 + 1), (x + 4, y0 + 12)]), fill=(255, 255, 255, 255))
+    for k in range(5):
+        x = 158 + k * 11; yb = 90 + openv * (0.5 + 0.04 * k)
+        d.polygon(S([(x, yb + 3), (x + 8, yb + 1), (x + 4, yb - 10)]), fill=(250, 250, 250, 255))
+    # 눈과 코
+    circle(d, 168 * SS, (52 + bob) * SS, 6.2 * SS, (255, 255, 255, 255))
+    circle(d, 170 * SS, (53 + bob) * SS, 4.2 * SS, (22, 30, 44, 255))
+    circle(d, 171.5 * SS, (51.5 + bob) * SS, 1.4 * SS, (255, 255, 255, 255))
+    d.line(S([(156, 40), (184, 46)]), fill=(40, 56, 78, 255), width=int(2.4 * SS))       # 화난 눈썹
+    circle(d, 218 * SS, (64 + bob) * SS, 1.6 * SS, (60, 82, 104, 255))
+    # 등지느러미 (머리 뒤로 살짝)
+    d.polygon(S([(70, 74), (84, 22), (104, 50), (96, 62)]), fill=(50, 72, 96, 255))
+    img = img.filter(ImageFilter.GaussianBlur(0.5 * SS))
+    # 수면: 아래쪽은 물에 잠겨 사라진다
+    mask = Image.new('L', (W, H), 255)
+    md = ImageDraw.Draw(mask)
+    for y in range(int(wl), H):
+        md.line([(0, y), (W, y)], fill=max(0, 255 - int((y - wl) / (SS * 1.0) * 24)))
+    img.putalpha(ImageChopsMin(img.getchannel('A'), mask))
+    # 물보라 고리
+    foam = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    fd = ImageDraw.Draw(foam)
+    for k, (rx, ry, al) in enumerate([(104, 13, 200), (84, 9, 150)]):
+        cx = 128 + 2 * math.sin(ph + k)
+        fd.ellipse([(cx - rx) * SS, wl - ry * SS, (cx + rx) * SS, wl + ry * SS], outline=(255, 255, 255, al), width=int(2.6 * SS))
+    foam = foam.filter(ImageFilter.GaussianBlur(0.8 * SS))
+    img = Image.alpha_composite(foam, img)
+    # 앞쪽 물결(몸 앞을 가린다)
+    front = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(front).arc([(26) * SS, wl - 12 * SS, 230 * SS, wl + 14 * SS], 15, 165, fill=(255, 255, 255, 215), width=int(3 * SS))
+    img = Image.alpha_composite(img, front.filter(ImageFilter.GaussianBlur(0.8 * SS)))
+    return lanczos(img, (256, 128))
 
 
 def ImageChopsMin(a, b):

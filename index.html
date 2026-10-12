@@ -45,6 +45,7 @@ const CONFIG = {
   stone: {
     count: 7,
     rx0: 113.4, ry0: 39.69,                          // 첫 번째 돌의 타원 반지름 (옵션이 들어갈 자리를 위해 기존 126×44.1의 0.9배)
+    skipLimit: 0.85,                                 // 상어 줄(돌 없음)을 건너뛰는 점프에 허용하는 거리 (가장 약한 개구리 최대 점프 × 이 값)
     ratio: 0.85,                                     // 등비수열 공비 (?ratio=0.8 로 덮어쓰기 가능)
     sideMargin: 16,                                  // 화면 가장자리와의 최소 간격
     maxCenterOffset: 132,                            // 강 중앙선에서 좌우로 벗어날 수 있는 최대 거리 (배치 편차, 기존 120의 1.1배)
@@ -67,6 +68,7 @@ const CONFIG = {
     deadzone: 6,                                     // 중심과 너무 가까운 터치는 방향 무시
     startXs: [0.30, 0.70],                           // P1/P2 출발 위치 (가로 비율)
     startYRatio: 0.3,                                // 출발 섬 안에서의 세로 위치 (작을수록 위쪽 → 화면 아래쪽에 여유)
+    landRadius: 0.5,                                 // 착지 판정 원 반지름 (개구리 반지름 × 0.5). 이 원이 돌·상어·얕은 물과 닿으면 닿은 것으로 판정
     landTime: 0.18, splashTime: 0.95, spawnTime: 0.35
   },
   game: { countdownStep: 0.8, goShow: 0.7, resultPanelDelay: 0.9 },
@@ -80,22 +82,24 @@ const CONFIG = {
   options: {
     edgeMargin: 6,                                   // 옵션 요소가 화면 가장자리와 두는 최소 간격(px)
     shark: {
-      rx: 0.52, ry: 0.30,                            // 상어 판정 타원 반지름 (개구리 크기만 한 상어)
+      rx: 0.78, ry: 0.45,                            // 상어 판정 타원 반지름 (개구리 크기의 1.5배 — 그림과 판정이 같이 커짐)
       clearance: 0.2,                                // 돌과 항상 두는 최소 거리 (이동 동선 전체 기준)
       swing: 0.5,                                    // 좌우로 움직이는 거리(한쪽 진폭)
       period: [2.6, 3.4],                            // 한 번 왕복하는 시간(초) 범위
-      jitterY: 8,                                    // 줄 높이에서 위아래로 흩어지는 정도(px)
+      jitterY: 0,                                    // (상어 줄은 돌이 없어 줄 가운데에 고정)
       biteTime: 0.7                                  // 잡아먹은 뒤 결과 화면까지 걸리는 시간(초)
     },
     slippery: {
       gap: 0.6,                                      // 쌍둥이 돌 사이 간격
       slideExtra: 0.35,                              // 미끄러져 돌 가장자리를 벗어나 더 나가는 거리
-      slideTime: [0.35, 0.8]                         // 미끄러지는 시간(초) 범위
+      slideTime: [0.35, 0.8],                        // 미끄러지는 시간(초) 범위
+      swapEvery: 10,                                 // 쌍둥이 돌이 자리를 바꿀지 정하는 주기(초). 그 줄에 개구리가 있으면 이번 차례는 건너뜀
+      swapChance: 0.5                                // 주기마다 실제로 교대할 확률 (교대하면 다시 일반 돌처럼 보임)
     },
     shallow: {
-      rx: 0.55, ry: 0.38,                            // 얕은 물 판정 타원 반지름 (개구리 한 마리 크기의 돌)
+      rx: 1.1, ry: 0.76,                             // 얕은 물 판정 타원 반지름 (개구리 크기의 2배)
       gap: [0.3, 1.0],                               // 옆 돌 가장자리와의 간격 범위
-      jitterY: 12,
+      jitterY: 6,
       autoReveal: 30,                                // 아무도 밟지 않아도 경기 시작 뒤 이 시간(초)이 지나면 그림자가 드러난다
       revealTime: 0.6                                // 첫 접촉 뒤 그림자가 나타나는 시간(초)
     }
@@ -436,42 +440,65 @@ function buildWorld(rng, opt, lenient) {
   const top = CONFIG.island.goalH, bottom = H - CONFIG.island.startH, river = bottom - top;
   const ks = Array.from({ length: n }, (_, i) => Math.pow(S.ratio, i));      // 등비수열로 작아짐
   const rys = ks.map((k) => S.ry0 * k);
-  // 돌끼리(그리고 섬과) 세로로 겹치지 않기 위한 최소 길이를 먼저 계산하고,
-  // 남는 길이는 모든 구간에 똑같이 나눠 여백을 균등하게 만든다.
-  let need = rys[0] + rys[n - 1];
-  for (let i = 1; i < n; i++) need += rys[i - 1] + rys[i];
-  const shrink = river < need ? river / need : 1;                              // 설정이 극단적이면 비례 축소
-  const pad = Math.max(0, (river - need) / (n + 1));
-  if (DEBUG && river < need) console.warn('강 길이가 부족합니다. 돌이 겹칠 수 있어요.');
-  const ys = [];
-  { let c = bottom; for (let i = 0; i < n; i++) { c -= (i === 0 ? rys[0] : rys[i - 1] + rys[i]) * shrink + pad; ys.push(c); } }
 
-  // 옵션 배치 줄: "맵 위쪽 절반"에 있는 돌 줄 중 서로 다른 줄에 하나씩
-  const mid = (top + bottom) / 2;
-  const upper = shuffle(ys.map((y, i) => i).filter((i) => ys[i] < mid), rng);
+  // 옵션 배치 줄: 맨 첫 줄(출발 섬 바로 앞)만 빼고 어느 줄이든, 서로 다른 줄에 하나씩
+  const elig = shuffle(Array.from({ length: n - 1 }, (_, i) => i + 1), rng);
   const kinds = shuffle(OPTION_KEYS.filter((k) => opt[k]), rng);
-  if (kinds.length > upper.length) return null;
+  if (kinds.length > elig.length) return null;
   const rowOpt = Array(n).fill(null);
-  kinds.forEach((k, i) => { rowOpt[upper[i]] = k; });
+  kinds.forEach((k, i) => { rowOpt[elig[i]] = k; });
+  const sr = rowOpt.indexOf('shark');                                          // 상어 줄 (없으면 -1): 이 줄에는 돌이 없다
+
+  // 세로 배치: 돌끼리(그리고 섬과) 겹치지 않는 최소 길이를 먼저 빼고, 남는 길이를 빈 간격에 똑같이 나눈다.
+  // 상어 줄은 돌 대신 "상어가 들어갈 만큼만"의 간격(sg)을 두어 앞뒤 돌 사이를 건널 수 있게 한다.
+  const P = [];                                                                // 돌이 있는 줄
+  for (let i = 0; i < n; i++) if (i !== sr) P.push(i);
+  const sg = 2 * (O.shark.ry * FZ + O.shark.clearance * FZ + 3);
+  const spec = sr >= 0 ? sr : -1;                                              // 특별 간격 번호 (P[k-1]와 P[k] 사이가 k번 간격)
+  let need = 0; for (const i of P) need += 2 * rys[i];
+  const avail = river - (sr >= 0 ? sg : 0);
+  const normalGaps = P.length + 1 - (sr >= 0 ? 1 : 0);
+  const shrink = avail < need ? avail / need : 1;                              // 설정이 극단적이면 비례 축소
+  const pad = Math.max(0, (avail - need) / normalGaps);
+  if (DEBUG && avail < need) console.warn('강 길이가 부족합니다. 돌이 겹칠 수 있어요.');
+  const ys = Array(n).fill(0);
+  { let c = bottom; P.forEach((i, k) => { c -= (k === spec ? sg : pad) + rys[i] * shrink; ys[i] = c; c -= rys[i] * shrink; }); }
+  if (sr >= 0) {                                                               // 상어 줄 높이 = 특별 간격의 한가운데
+    const below = ys[sr - 1] - rys[sr - 1] * shrink;
+    const above = sr < n - 1 ? ys[sr + 1] + rys[sr + 1] * shrink : top;
+    ys[sr] = (below + above) / 2;
+  }
 
   const weakest = Math.min(...CONFIG.frogs.map((f) => f.power));
   const reach = CONFIG.jump.maxDist * weakest * S.reachLimit;                  // 가장 약한 개구리도 건널 수 있는 상한
+  const reachSkip = CONFIG.jump.maxDist * weakest * S.skipLimit;               // 상어 줄(돌이 없는 줄)을 건너뛸 때의 상한
   const cx = W / 2, stones = [];
-  let prev = null, shark = null, shallow = null;
+  let prevs = [], skipped = false, shark = null, shallow = null;
   for (let i = 0; i < n; i++) {
     const rx = S.rx0 * ks[i], ry = rys[i], y = ys[i], kind = rowOpt[i];
+    if (i === sr) {                                                            // 상어 줄: 돌 없이 상어만 (줄 가운데를 좌우로 왕복)
+      const srx = O.shark.rx * FZ, sry = O.shark.ry * FZ, swing = O.shark.swing * FZ, half = swing + srx;
+      const c0 = em + half, c1 = W - em - half;
+      const scx = c0 + rng() * (c1 - c0);
+      shark = { row: i, cx: scx, y, swing, rx: srx, ry: sry, half, period: lerp(O.shark.period[0], O.shark.period[1], rng()),
+                phase: rng() * TAU, t: 0, px: scx, py: y, dir: 1, bite: null };
+      skipped = true;
+      continue;
+    }
+    const R = skipped ? reachSkip : reach;
     const minX = S.sideMargin + rx, maxX = W - S.sideMargin - rx;
     let lo = Math.max(minX, cx - S.maxCenterOffset), hi = Math.min(maxX, cx + S.maxCenterOffset);
-    if (prev) {                                                                // 앞 돌에서 건널 수 있는 범위
-      const dy = prev.y - y, dx = Math.sqrt(Math.max(0, reach * reach - dy * dy));
-      lo = Math.max(lo, prev.x - dx); hi = Math.min(hi, prev.x + dx);
-    }
-    let x, side = 0;                                                           // side: 옵션 요소가 있는 쪽 (-1 왼쪽 / +1 오른쪽)
+    const span = (p) => { const dy = p.y - y; return Math.sqrt(Math.max(0, R * R - dy * dy)); };
+    for (const p of prevs) { const dx = span(p); lo = Math.max(lo, p.x - dx); hi = Math.min(hi, p.x + dx); }   // 앞 줄 돌(쌍둥이면 둘 다)에서 건널 수 있는 범위
+    let x, side = 0, twinD = 0;                                                // side: 옵션 요소가 있는 쪽 (-1 왼쪽 / +1 오른쪽)
     if (kind) {
       const room = sideRoomNeeded(kind, rx), cands = [];
-      const L = [Math.max(lo, room + rx), hi], R = [lo, Math.min(hi, W - room - rx)];
-      if (L[0] <= L[1]) cands.push([-1, L]);
-      if (R[0] <= R[1]) cands.push([1, R]);
+      if (kind === 'slippery') twinD = 2 * rx + O.slippery.gap * FZ;            // 쌍둥이 돌까지의 중심 간 거리
+      for (const sd of [-1, 1]) {
+        let a0 = sd < 0 ? Math.max(lo, room + rx) : lo, a1 = sd < 0 ? hi : Math.min(hi, W - room - rx);
+        if (kind === 'slippery') for (const p of prevs) { const dx = span(p); a0 = Math.max(a0, p.x - dx - sd * twinD); a1 = Math.min(a1, p.x + dx - sd * twinD); }   // 쌍둥이도 앞 돌에서 건널 수 있어야 한다
+        if (a0 <= a1) cands.push([sd, [a0, a1]]);
+      }
       if (!cands.length) return null;
       const pick = cands[Math.floor(rng() * cands.length)];
       side = pick[0]; x = pick[1][0] + rng() * (pick[1][1] - pick[1][0]);
@@ -480,47 +507,40 @@ function buildWorld(rng, opt, lenient) {
       x = lo + rng() * (hi - lo);
     }
     const base = { x, y, rx, ry, row: i, bob: 0, slippery: false, slipped: false };
-    const safe = Object.assign({ idx: stones.length }, base);                  // 이 줄의 "정상" 돌 (다음 돌과의 연결 기준)
-    stones.push(safe);
-
-    if (kind === 'slippery') {                                                 // 쌍둥이 돌: 옆에 하나 더, 그쪽이 미끄럽다
-      const gap = O.slippery.gap * FZ;
-      stones.push(Object.assign({}, base, { idx: stones.length, x: x + side * (2 * rx + gap), slippery: true }));
-    } else if (kind === 'shark') {
-      const srx = O.shark.rx * FZ, sry = O.shark.ry * FZ, swing = O.shark.swing * FZ, clr = O.shark.clearance * FZ, half = swing + srx;
-      const c0 = side > 0 ? x + rx + clr + half : em + half;                   // 동선 전체(진폭+몸 길이)가 돌에서 clr 이상 떨어지도록
-      const c1 = side > 0 ? W - em - half : x - rx - clr - half;
-      if (c0 > c1) return null;
-      const scx = c0 + rng() * (c1 - c0), sy = y + (rng() * 2 - 1) * O.shark.jitterY;
-      shark = { row: i, cx: scx, y: sy, swing, rx: srx, ry: sry, half, period: lerp(O.shark.period[0], O.shark.period[1], rng()),
-                phase: rng() * TAU, t: 0, px: scx, py: sy, dir: 1, bite: null };
+    const first = Object.assign({ idx: stones.length }, base);
+    stones.push(first);
+    const row = [first];
+    if (kind === 'slippery') {                                                 // 쌍둥이 돌: 옆에 하나 더, 둘 중 하나가 미끄럽다 (10초마다 자리를 바꿀 수 있음)
+      const twin = Object.assign({}, base, { idx: stones.length, x: x + side * twinD });
+      stones.push(twin); row.push(twin);
+      (rng() < 0.5 ? first : twin).slippery = true;
     } else if (kind === 'shallow') {
       const rxS = O.shallow.rx * FZ, ryS = O.shallow.ry * FZ, g0 = O.shallow.gap[0] * FZ, g1 = O.shallow.gap[1] * FZ;
-      const avail = side > 0 ? (W - em) - (x + rx) : (x - rx) - em;
-      const gmax = Math.min(g1, avail - 2 * rxS);
+      const avail2 = side > 0 ? (W - em) - (x + rx) : (x - rx) - em;
+      const gmax = Math.min(g1, avail2 - 2 * rxS);
       if (gmax < g0 - 1e-9) return null;
       const g = g0 + rng() * Math.max(0, gmax - g0);
       shallow = { row: i, x: x + side * (rx + g + rxS), y: y + (rng() * 2 - 1) * O.shallow.jitterY, rx: rxS, ry: ryS, revealed: false, revealT: 0 };
     }
-    prev = safe;
+    prevs = row; skipped = false;
   }
-  return { stones, shark, shallow, rowOpt, ys };
+  return { stones, shark, shallow, rowOpt, ys, sharkGap: sg };
 }
 
 function generateWorld(rng, opt) {
-  for (let a = 0; a < 80; a++) {
+  for (let a = 0; a < 200; a++) {
     const w = buildWorld(rng, opt, false);
-    if (w) { w.attempts = a + 1; return w; }
+    if (w && validateWorld(w, opt).length === 0) { w.attempts = a + 1; return w; }
   }
   const w = buildWorld(rng, { shark: false, slippery: false, shallow: false }, true);   // 최후의 수단: 옵션 없이
   w.fallback = true;
   return w;
 }
 
-/* 배치 검증 (개발·테스트용): 문제가 있으면 항목 이름 배열을 돌려준다 */
+/* 배치 검증: 문제가 있으면 항목 이름 배열을 돌려준다 (생성할 때 걸러내는 데도 쓴다) */
 function validateWorld(w, opt) {
-  const S = CONFIG.stone, O = CONFIG.options, FZ = frogSize(), em = O.edgeMargin, bad = [];
-  const top = CONFIG.island.goalH, bottom = H - CONFIG.island.startH, mid = (top + bottom) / 2;
+  const S = CONFIG.stone, O = CONFIG.options, FZ = frogSize(), em = O.edgeMargin, bad = [], n = S.count;
+  const top = CONFIG.island.goalH, bottom = H - CONFIG.island.startH;
   const pts = (e, k = 160) => Array.from({ length: k }, (_, i) => [e.x + e.rx * Math.cos(TAU * i / k), e.y + e.ry * Math.sin(TAU * i / k)]);
   const minD = (A, B) => { let m = 1e9; for (const p of A) for (const q of B) m = Math.min(m, Math.hypot(p[0] - q[0], p[1] - q[1])); return m; };
   const inside = (p, e) => ((p.x - e.x) / e.rx) ** 2 + ((p.y - e.y) / e.ry) ** 2 < 1;
@@ -529,37 +549,44 @@ function validateWorld(w, opt) {
   for (const s of st) {
     if (s.x - s.rx < S.sideMargin - 1e-6 || s.x + s.rx > W - S.sideMargin + 1e-6) bad.push('stone-edge');
     if (s.y - s.ry < top - 1e-6 || s.y + s.ry > bottom + 1e-6) bad.push('stone-river');
+    if (Math.abs(s.rx / (S.rx0 * Math.pow(S.ratio, s.row)) - 1) > 1e-9) bad.push('ratio');
   }
   for (let i = 0; i < st.length; i++) for (let j = i + 1; j < st.length; j++) {
     if (inside(st[i], st[j]) || inside(st[j], st[i]) || minD(pts(st[i], 90), pts(st[j], 90)) < 2) bad.push('stone-overlap');
   }
-  const weakest = Math.min(...CONFIG.frogs.map((f) => f.power)), reach = CONFIG.jump.maxDist * weakest * S.reachLimit;
-  const chain = st.filter((s) => !s.slippery);
-  if (chain.length !== S.count) bad.push('chain-count');
-  chain.forEach((s, k) => {
-    if (s.row !== k) bad.push('chain-row');
-    if (Math.abs(s.rx / (S.rx0 * Math.pow(S.ratio, k)) - 1) > 1e-9) bad.push('ratio');
-    if (k > 0 && Math.hypot(s.x - chain[k - 1].x, s.y - chain[k - 1].y) > reach + 1e-6) bad.push('reach');
-  });
-  // 옵션 줄 규칙
+  // 줄별 연결: 이웃한 돌 줄의 모든 돌 쌍이 건널 수 있는 거리여야 한다 (상어 줄을 건너뛰는 경우는 더 너그러운 상한)
+  const weakest = Math.min(...CONFIG.frogs.map((f) => f.power));
+  const reach = CONFIG.jump.maxDist * weakest * S.reachLimit, reachSkip = CONFIG.jump.maxDist * weakest * S.skipLimit;
+  const rows = []; for (let i = 0; i < n; i++) rows.push(st.filter((s) => s.row === i));
+  const sr = w.shark ? w.shark.row : -1;
+  if (rows.filter((r) => r.length).length !== n - (sr >= 0 ? 1 : 0)) bad.push('row-count');
+  let prev = null, skip = false;
+  for (let i = 0; i < n; i++) {
+    if (!rows[i].length) { skip = true; continue; }
+    if (prev) for (const a of prev) for (const b of rows[i]) if (Math.hypot(a.x - b.x, a.y - b.y) > (skip ? reachSkip : reach) + 1e-6) bad.push('reach');
+    prev = rows[i]; skip = false;
+  }
+  // 옵션 줄 규칙: 맨 첫 줄(0번)은 제외, 서로 다른 줄
   const enabled = OPTION_KEYS.filter((k) => opt[k]);
   if (w.rowOpt.filter(Boolean).length !== enabled.length) bad.push('option-count');
-  const rowOf = { shark: w.shark && w.shark.row, shallow: w.shallow && w.shallow.row, slippery: (st.find((s) => s.slippery) || {}).row };
+  const slRow = (st.find((s) => s.slippery) || {}).row;
+  const rowOf = { shark: w.shark && w.shark.row, shallow: w.shallow && w.shallow.row, slippery: slRow };
   for (const k of OPTION_KEYS) {
     if (!opt[k]) { if (rowOf[k] !== undefined && rowOf[k] !== null && rowOf[k] !== false) bad.push('unexpected-' + k); continue; }
     if (rowOf[k] === undefined || rowOf[k] === null) { bad.push('missing-' + k); continue; }
     if (w.rowOpt[rowOf[k]] !== k) bad.push('row-mismatch-' + k);
-    if (!(w.ys[rowOf[k]] < mid)) bad.push('not-upper-' + k);
+    if (rowOf[k] === 0) bad.push('first-row-' + k);
   }
   if (opt.slippery) {
     const sl = st.filter((s) => s.slippery);
-    if (sl.length !== 1 || st.filter((s) => s.row === sl[0].row).length !== 2) bad.push('slippery-pair');
+    if (sl.length !== 1 || rows[slRow].length !== 2) bad.push('slippery-pair');
   }
   if (w.shark) {
     const s = w.shark, r = { x0: s.cx - s.half, x1: s.cx + s.half, y0: s.y - s.ry, y1: s.y + s.ry }, clr = O.shark.clearance * FZ;
     if (r.x0 < em - 1e-6 || r.x1 > W - em + 1e-6 || r.y0 < top || r.y1 > bottom) bad.push('shark-bounds');
+    if (rows[s.row].length) bad.push('shark-row-has-stone');
     for (const t of st) for (const p of pts(t, 240)) if (rectD(p[0], p[1], r) < clr - 0.5) { bad.push('shark-clearance'); break; }
-    if (Math.abs(s.rx * 2 - FZ) > FZ * 0.2) bad.push('shark-size');
+    if (Math.abs(s.rx - O.shark.rx * FZ) > 1e-6) bad.push('shark-size');
   }
   if (w.shallow) {
     const s = w.shallow, sp = pts(s);
@@ -570,31 +597,40 @@ function validateWorld(w, opt) {
   return bad;
 }
 
+/* 착지 판정: 개구리 중심에서 반지름 landRadius(개구리 반지름의 절반)인 원이 닿으면 닿은 것으로 본다.
+ * (타원을 그 반지름만큼 부풀려 근사 — 여러 개가 닿으면 중심에 더 가까운 것) */
+const landR = () => CONFIG.frog.landRadius * CONFIG.frog.radius;
 function judgeLanding(x, y) {
-  const slack = CONFIG.stone.landingSlack;
+  const slack = CONFIG.stone.landingSlack, lr = landR();
+  let best = null, bv = Infinity;
   for (const s of G.stones) {
-    const dx = (x - s.x) / (s.rx * slack), dy = (y - s.y) / (s.ry * slack);
-    if (dx * dx + dy * dy <= 1) return { type: s.slippery ? 'slippery' : 'stone', stone: s.idx };
+    const dx = (x - s.x) / (s.rx * slack + lr), dy = (y - s.y) / (s.ry * slack + lr), v = dx * dx + dy * dy;
+    if (v <= 1 && v < bv) { bv = v; best = { type: s.slippery ? 'slippery' : 'stone', stone: s.idx }; }
   }
-  const sh = G.shallow;                                      // 얕은 물: 눈에는 안 보이지만 개구리 크기의 돌로 판정
-  if (sh) { const dx = (x - sh.x) / sh.rx, dy = (y - sh.y) / sh.ry; if (dx * dx + dy * dy <= 1) return { type: 'shallow' }; }
-  if (y <= CONFIG.island.goalH) return { type: 'goal' };
-  if (y >= H - CONFIG.island.startH) return { type: 'start' };
+  if (best) return best;
+  const sh = G.shallow;                                      // 얕은 물: 눈에는 안 보이지만 큰 돌처럼 판정
+  if (sh) { const dx = (x - sh.x) / (sh.rx + lr), dy = (y - sh.y) / (sh.ry + lr); if (dx * dx + dy * dy <= 1) return { type: 'shallow' }; }
+  if (y - lr <= CONFIG.island.goalH) return { type: 'goal' };
+  if (y + lr >= H - CONFIG.island.startH) return { type: 'start' };
   return { type: 'water' };
 }
 /* 상어는 움직이므로 착지하는 순간의 위치로 따로 판정한다 */
 function sharkHit(x, y) {
   const s = G.shark;
   if (!s) return false;
-  const dx = (x - s.px) / s.rx, dy = (y - s.py) / s.ry;
+  const lr = landR(), dx = (x - s.px) / (s.rx + lr), dy = (y - s.py) / (s.ry + lr);
   return dx * dx + dy * dy <= 1;
 }
 
+let swapRng = Math.random;
 function newWorld() {
   G.seed = FIXED_SEED !== null ? FIXED_SEED : Math.floor(Math.random() * 4294967296) >>> 0;
   const w = generateWorld(mulberry32(G.seed), G.options);
   G.world = w; G.stones = w.stones; G.shark = w.shark; G.shallow = w.shallow;
   G.sharkLoss = null; G.loseInfo = null;
+  const sl0 = w.stones.find((t) => t.slippery);
+  G.slipPair = sl0 ? w.stones.filter((t) => t.row === sl0.row) : null; G.swapT = 0;
+  swapRng = mulberry32(G.seed ^ 0x5151AAAA);
   jumpRng = FIXED_SEED !== null ? mulberry32(G.seed ^ 0xA5A5A5A5) : Math.random;
   initParticles();
 }
@@ -692,6 +728,7 @@ function launch(f, tx, ty) {
 function landFrog(f) {
   const j = f.jump, res = j.res;
   f.x = j.tx; f.y = j.ty; f.jump = null;
+  if (res.type === 'stone' || res.type === 'slippery') res.type = G.stones[res.stone].slippery ? 'slippery' : 'stone';   // 공중에 있는 사이 자리가 바뀌었을 수 있다
   if (res.type === 'goal') { winGame(f); return; }
   if (res.type === 'water') {
     if (G.shark && !G.sharkLoss && sharkHit(f.x, f.y)) { eatFrog(f); return; }       // 상어 위에 착지 → 즉시 패배
@@ -719,7 +756,7 @@ function startSlip(f, s) {
   let t = 0;
   while (t < 400) { const ex = (f.x + dx * t - s.x) / s.rx, ey = (f.y + dy * t - s.y) / s.ry; if (ex * ex + ey * ey >= 1) break; t += 2; }
   const dist = t + O.slideExtra * frogSize();
-  f.slip = { sx: f.x, sy: f.y, tx: clamp(f.x + dx * dist, 6, W - 6), ty: clamp(f.y + dy * dist, 6, H - 6), t: 0,
+  f.slip = { stone: s.idx, sx: f.x, sy: f.y, tx: clamp(f.x + dx * dist, 6, W - 6), ty: clamp(f.y + dy * dist, 6, H - 6), t: 0,
              dur: clamp(dist / 190, O.slideTime[0], O.slideTime[1]) };
   setFrogState(f, 'slip');
   addFx('dust', f.x, f.y, 0.35);
@@ -791,6 +828,20 @@ function updateFrog(f, dt) {
       break;
     default: break;                                   // eaten: 결과 화면으로 넘어갈 때까지 숨김
   }
+}
+
+/* 미끄러운 돌 쌍: 10초마다 (확률로) 미끄러운 쪽과 정상 쪽이 자리를 바꾼다. 바뀌면 다시 일반 돌처럼 보인다.
+ * 그 줄의 돌 위에 개구리가 있거나 미끄러지는 중이면 이번 차례는 건너뛴다. */
+function updateSlipSwap(dt) {
+  const pair = G.slipPair, O = CONFIG.options.slippery;
+  if (!pair || G.state !== 'playing') return;
+  G.swapT += dt;
+  if (G.swapT < O.swapEvery) return;
+  G.swapT = 0;
+  const ids = pair.map((t) => t.idx);
+  if (G.frogs.some((f) => ids.includes(f.on) || (f.state === 'slip' && f.slip && ids.includes(f.slip.stone)))) return;
+  if (swapRng() >= O.swapChance) return;
+  for (const t of pair) { t.slippery = !t.slippery; t.slipped = false; }
 }
 
 function updateShark(dt) {
@@ -1022,6 +1073,7 @@ function update(dt) {
     G.elapsed += dt; G.goT += dt;
   }
   if (G.shallow && !G.shallow.revealed && G.state === 'playing' && G.elapsed >= CONFIG.options.shallow.autoReveal) revealShallow();
+  updateSlipSwap(dt);
   updateShark(dt);                                     // 착지 판정에 쓰이므로 개구리보다 먼저
   updateParticles(dt);
   if (G.shallow && G.shallow.revealed) G.shallow.revealT += dt;
@@ -1350,10 +1402,10 @@ function drawWorld() {
   for (const f of G.frogs) if (f.state === 'charge') drawChargeUI(f);
   if (DEBUG) {                                          // 판정 영역 표시: 노랑=돌, 하늘=개구리 터치, 빨강=상어, 초록=얕은 물(숨겨진 것도 표시)
     ctx.save(); ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#ff0'; for (const s of G.stones) { ell(s.x, s.y, s.rx * CONFIG.stone.landingSlack, s.ry * CONFIG.stone.landingSlack); ctx.stroke(); }
+    ctx.strokeStyle = '#ff0'; for (const s of G.stones) { ell(s.x, s.y, s.rx * CONFIG.stone.landingSlack + landR(), s.ry * CONFIG.stone.landingSlack + landR()); ctx.stroke(); }
     ctx.strokeStyle = '#0ff'; for (const f of G.frogs) { ctx.beginPath(); ctx.arc(f.x, f.y, CONFIG.frog.touchRadius, 0, TAU); ctx.stroke(); }
-    if (G.shark) { ctx.strokeStyle = '#f44'; ell(G.shark.px, G.shark.py, G.shark.rx, G.shark.ry); ctx.stroke(); ctx.strokeRect(G.shark.cx - G.shark.half, G.shark.y - G.shark.ry, G.shark.half * 2, G.shark.ry * 2); }
-    if (G.shallow) { ctx.strokeStyle = '#4f4'; ell(G.shallow.x, G.shallow.y, G.shallow.rx, G.shallow.ry); ctx.stroke(); }
+    if (G.shark) { ctx.strokeStyle = '#f44'; ell(G.shark.px, G.shark.py, G.shark.rx + landR(), G.shark.ry + landR()); ctx.stroke(); ctx.strokeRect(G.shark.cx - G.shark.half, G.shark.y - G.shark.ry, G.shark.half * 2, G.shark.ry * 2); }
+    if (G.shallow) { ctx.strokeStyle = '#4f4'; ell(G.shallow.x, G.shallow.y, G.shallow.rx + landR(), G.shallow.ry + landR()); ctx.stroke(); }
     ctx.restore();
   }
 }
@@ -1621,6 +1673,7 @@ function renderResult() {
 }
 
 function render() {
+  updateEdgeColors();
   ctx.setTransform(view.scale, 0, 0, view.scale, 0, 0);
   ui.cur = [];
   drawWorld();
@@ -1649,6 +1702,35 @@ function resize() {
   canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
   canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
   view.scale = canvas.width / W;
+  applyEdge();
+}
+
+/* 캔버스 바깥(레터박스·하단 안전 영역·노치 영역)을 테마 배경으로 채운다:
+ * 위쪽은 도착 섬 윗줄 색, 아래쪽은 출발 섬 아랫줄 색, 좌우는 물 색. 이미지가 없으면 팔레트 색을 쓴다. */
+const edge = { key: '', top: '#061a24', mid: '#061a24', bot: '#061a24' };
+function sampleColor(img, sx, sy, sw, sh) {
+  try {
+    const c = document.createElement('canvas'); c.width = c.height = 1;
+    const g = c.getContext('2d'); g.drawImage(img, sx, sy, sw, sh, 0, 0, 1, 1);
+    const d = g.getImageData(0, 0, 1, 1).data;
+    return d[3] < 200 ? null : `rgb(${d[0]},${d[1]},${d[2]})`;
+  } catch (e) { return null; }
+}
+function updateEdgeColors() {
+  const tid = G.theme, pal = theme(tid).pal;
+  const gi = resolveSprite('island_goal', tid).img, si = resolveSprite('island_start', tid).img, wi = resolveSprite('bg_water', tid).img;
+  const key = tid + '|' + (gi ? 1 : 0) + (si ? 1 : 0) + (wi ? 1 : 0);
+  if (key === edge.key) return;
+  edge.key = key;
+  edge.top = (gi && sampleColor(gi, 0, 0, gi.naturalWidth, Math.max(1, Math.round(gi.naturalHeight * 0.05)))) || pal.landA;
+  edge.bot = (si && sampleColor(si, 0, si.naturalHeight - Math.max(1, Math.round(si.naturalHeight * 0.05)), si.naturalWidth, Math.max(1, Math.round(si.naturalHeight * 0.05)))) || pal.landB;
+  edge.mid = (wi && sampleColor(wi, 0, wi.naturalHeight * 0.4, wi.naturalWidth, wi.naturalHeight * 0.2)) || pal.waterB;
+  applyEdge();
+}
+function applyEdge() {
+  const r = canvas.getBoundingClientRect(), t = Math.round(r.top), b = Math.round(r.bottom);
+  const bg = `linear-gradient(to bottom, ${edge.top} 0, ${edge.top} ${t}px, ${edge.mid} ${t}px, ${edge.mid} ${b}px, ${edge.bot} ${b}px, ${edge.bot} 100%)`;
+  document.documentElement.style.background = bg; document.body.style.background = bg;
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 120));
